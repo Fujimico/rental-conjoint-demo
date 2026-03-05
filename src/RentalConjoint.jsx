@@ -329,6 +329,11 @@ function LandingPage({onStart, hasSaved, onOpenSaved}){
           ))}
         </div>
         <button onClick={onStart} style={btnStyle(C.ink,"#fff",{fontSize:16,padding:"16px 44px"})}>診断を始める →</button>
+        {hasSaved&&(
+          <button onClick={onOpenSaved} style={btnStyle("transparent",C.accent,{marginTop:14,border:`1px solid ${C.accent}`,padding:"12px 18px",borderRadius:10,fontWeight:800})}>
+            前回のレポートを開く
+          </button>
+        )}
       </div>
     </div>
   );
@@ -525,6 +530,7 @@ function BYOPage({byo,setByo,onNext,onBack}){
             </div>
           ))}
         </div>
+        <div style={{fontSize:12,color:C.muted,marginBottom:10}}>※この結果はこの端末（このブラウザ）に自動保存されます</div>
         <div style={{display:"flex",gap:12}}>
           <button onClick={onBack} style={btnStyle("transparent",C.muted,{border:`1px solid ${C.line}`})}>← 戻る</button>
           <button onClick={onNext} disabled={!allDone}
@@ -745,9 +751,6 @@ const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
                   <span key={i.id} style={{background:"#F0FAF3",border:`1px solid ${C.green}`,color:C.green,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:700}}>{i.label}</span>
                 ))}
               </div>
-            </div>
-          )}
-          </div>
             </div>
           )}
           <div style={{marginTop:10,fontSize:12,color:C.muted}}>条件にしない設備：{anyItems.length}件</div>
