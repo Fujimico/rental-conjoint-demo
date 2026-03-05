@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -215,6 +215,7 @@ function getRecommendation(pw,btypes){
 // ─────────────────────────────────────────────
 export default function App(){
   const[stage,   setStage]   =useState("landing");
+  const[saved,  setSaved]  =useState(()=>loadSaved());
   const[prereqs, setPrereqs] =useState({rentMin:"",rentMax:"",area:""});
   const[btypes,  setBtypes]  =useState([]);
   const[byo,     setByo]     =useState({});
@@ -230,7 +231,7 @@ const[results, setResults] =useState(null);
   function handleChoice(chosenIdx){
     const nr=[...resps,{profiles:TASKS[taskIdx].profiles,chosen:chosenIdx}];
     setResps(nr);
-    if(taskIdx===7){setFeedback(getMidFeedback(nr));return;}
+    if(taskIdx===7 && !midShown){setMidShown(true);setFeedback(getMidFeedback(nr));return;}
     if(taskIdx<TASKS.length-1)setTaskIdx(taskIdx+1);
     else finalize(nr);
   }
@@ -265,12 +266,13 @@ const[results, setResults] =useState(null);
     setStage("result");
   }
   function restart(){
+    setMidShown(false);
     setStage("landing");setPrereqs({rentMin:"",rentMax:"",area:""});
     setBtypes([]);setByo({});setTaskIdx(0);setResps([]);setFeedback(null);setResults(null);
   }
 
   if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
-  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved?.results){ setResults(saved.results); setStage("result"); } }}/>;
+  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved){ if(saved.prereqs) setPrereqs(saved.prereqs); if(saved.btypes) setBtypes(saved.btypes); if(saved.byo) setByo(saved.byo); if(saved.results) setResults(saved.results); setStage("result"); } }}/>;
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
