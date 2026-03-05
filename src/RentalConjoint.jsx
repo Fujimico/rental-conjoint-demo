@@ -302,14 +302,15 @@ const importSaved = (payload) => {
   } catch {}
 };
 
-  if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;  if(stage==="landing") return (
+  if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
+  if(stage==="landing") return (
     <LandingPage
       onStart={()=>{ setMidShown(false); setStage("prereqs"); }}
       hasSaved={!!saved}
       onOpenSaved={openSaved}
       onImportSaved={importSaved}
     />
-  ); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved){ if(saved.prereqs) setPrereqs(saved.prereqs); if(saved.btypes) setBtypes(saved.btypes); if(saved.byo) setByo(saved.byo); if(saved.results) setResults(saved.results); setStage("result"); } }} onImportSaved={(payload)=>{ if(!payload) return; try{ if(payload.prereqs) setPrereqs(payload.prereqs); if(payload.btypes) setBtypes(payload.btypes); if(payload.byo) setByo(payload.byo); if(payload.results) setResults(payload.results); saveResult(payload); setSaved(payload); setStage("result"); }catch{}} }}/>;
+  );
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
