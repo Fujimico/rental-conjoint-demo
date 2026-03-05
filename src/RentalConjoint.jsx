@@ -215,6 +215,13 @@ function getRecommendation(pw,btypes){
 export default function App(){
   const[stage,   setStage]   =useState("landing");
   const[saved,  setSaved]  =useState(()=>loadSaved());
+
+  // landing に戻った時も localStorage から再読込（再診断で state をリセットしても「前回レポート」を出す）
+  useEffect(() => {
+    if (stage !== "landing") return;
+    const s = loadSaved();
+    if (s) setSaved(s);
+  }, [stage]);
   const[prereqs, setPrereqs] =useState({rentMin:"",rentMax:"",area:""});
   const[btypes,  setBtypes]  =useState([]);
   const[byo,     setByo]     =useState({});
@@ -275,7 +282,7 @@ const[results, setResults] =useState(null);
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
-  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} onRestart={restart}/>;
+  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} onClearSaved={()=>{ try{ localStorage.removeItem(STORAGE_KEY);}catch{} setSaved(null); }} onRestart={restart}/>;
   return null;
 }
 
@@ -329,6 +336,17 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
           ))}
         </div>
         <button onClick={onStart} style={btnStyle(C.ink,"#fff",{fontSize:16,padding:"16px 44px"})}>診断を始める →</button>
+        {hasSaved&&(
+          <button onClick={onOpenSaved} style={btnStyle("transparent",C.accent,{marginTop:14,border:`1px solid ${C.accent}`,padding:"12px 18px",borderRadius:10,fontWeight:800})}>
+            前回のレポートを開く
+          </button>
+        )}
+        <div style={{marginTop:14,fontSize:12,color:C.muted,lineHeight:1.6}}>
+          ※保存は「このURL × このブラウザ」に保持されます（プレビューURLや別ブラウザだと引き継がれません）
+        </div>
+        <div style={{marginTop:14}}>
+          <ImportBox onImport={onImportSaved}/>
+        </div>
       </div>
     </div>
   );
@@ -760,7 +778,6 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
           <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("結果JSONをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 結果JSONをコピー</button>
           <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🧹 保存を消す</button>
           <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{flex:1})}>↩ もう一度やってみる</button>
-/button>
         </div>
       </div>
     </div>
