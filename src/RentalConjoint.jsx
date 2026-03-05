@@ -24,8 +24,7 @@ const BYO_ITEMS = [
 
 const BYO_OPTIONS = [
   { value:"must", label:"必須",       bg:"#2B5EA7", fg:"#fff" },
-  { value:"no",   label:"避けたい",   bg:"#888",    fg:"#fff" },
-  { value:"any",  label:"気にしない", bg:"#4A7C59", fg:"#fff" },
+  { value:"any",  label:"条件にしない", bg:"#4A7C59", fg:"#fff" },
 ];
 
 // ── カラートークン ─────────────────────────────
@@ -499,11 +498,7 @@ function BYOPage({byo,setByo,onNext,onBack}){
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:600,margin:"0 auto",padding:"60px 24px"}}>
-        <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 避けたい / 気にしない」を選んでください。"/>
-        <div style={{fontSize:12,color:C.muted,margin:"-18px 0 18px",lineHeight:1.6}}>
-          「避けたい」= できれば付いていない方が良い（賃料が上がる等の理由で）
-          ／「気にしない」= あってもなくてもOK
-        </div>
+        <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 条件にしない」を選んでください。"/>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:28}}>
           {BYO_ITEMS.map(item=>(
             <div key={item.id} style={{
@@ -643,9 +638,8 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
   const mustItems=BYO_ITEMS.filter(i=>byo[i.id]==="must");
-  const noItems=BYO_ITEMS.filter(i=>byo[i.id]==="no");
   const anyItems=BYO_ITEMS.filter(i=>byo[i.id]==="any");
-  const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
+const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
 
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
@@ -753,17 +747,10 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
               </div>
             </div>
           )}
-          {noItems.length>0&&(
-            <div>
-              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>× 避けたい</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {noItems.map(i=>(
-                  <span key={i.id} style={{background:C.bg,border:`1px solid ${C.line}`,color:C.muted,padding:"4px 12px",borderRadius:20,fontSize:12}}>{i.label}</span>
-                ))}
-              </div>
+          </div>
             </div>
           )}
-          <div style={{marginTop:10,fontSize:12,color:C.muted}}>気にしない設備：{anyItems.length}件</div>
+          <div style={{marginTop:10,fontSize:12,color:C.muted}}>条件にしない設備：{anyItems.length}件</div>
         </div>
 
         <div style={{display:"flex",gap:12}}>
