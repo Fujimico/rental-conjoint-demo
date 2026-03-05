@@ -271,7 +271,7 @@ const[results, setResults] =useState(null);
   }
 
   if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
-  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved){ if(saved.prereqs) setPrereqs(saved.prereqs); if(saved.btypes) setBtypes(saved.btypes); if(saved.byo) setByo(saved.byo); if(saved.results) setResults(saved.results); setStage("result"); } }}/>;
+  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved){ if(saved.prereqs) setPrereqs(saved.prereqs); if(saved.btypes) setBtypes(saved.btypes); if(saved.byo) setByo(saved.byo); if(saved.results) setResults(saved.results); setStage("result"); } }} onImportSaved={(payload)=>{ if(!payload) return; try{ if(payload.prereqs) setPrereqs(payload.prereqs); if(payload.btypes) setBtypes(payload.btypes); if(payload.byo) setByo(payload.byo); if(payload.results) setResults(payload.results); saveResult(payload); setSaved(payload); setStage("result"); }catch{}} }}/>;
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
@@ -299,7 +299,7 @@ function Header({taskNum,total}){
 // ─────────────────────────────────────────────
 // LANDING
 // ─────────────────────────────────────────────
-function LandingPage({onStart, hasSaved, onOpenSaved}){
+function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
@@ -638,7 +638,7 @@ function FeedbackPage({msg,onContinue}){
 // ─────────────────────────────────────────────
 // RESULT
 // ─────────────────────────────────────────────
-function ResultPage({results,prereqs,btypes,byo,onRestart}){
+function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
   const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
@@ -757,9 +757,46 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
 
         <div style={{display:"flex",gap:12}}>
           <button onClick={()=>window.print()} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🖨️ 印刷・保存</button>
+          <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("結果JSONをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 結果JSONをコピー</button>
+          <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🧹 保存を消す</button>
           <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{flex:1})}>↩ もう一度やってみる</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────
+// ImportBox (JSON復元)
+// ─────────────────────────────────────────────
+function ImportBox({onImport}){
+  const [open,setOpen]=useState(false);
+  const [text,setText]=useState("");
+  const [err,setErr]=useState("");
+  return (
+    <div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:12,padding:"12px 14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+        <div style={{fontWeight:800,fontSize:12,color:C.ink}}>JSONから復元（別URL/別端末から移行したい時）</div>
+        <button onClick={()=>setOpen(o=>!o)} style={btnStyle(open?C.ink:"transparent",open?"#fff":C.ink,{padding:"8px 10px",borderRadius:10,border:open?"none":`1px solid ${C.line}`})}>
+          {open?"閉じる":"開く"}
+        </button>
+      </div>
+      {open&&(
+        <div style={{marginTop:10}}>
+          <textarea value={text} onChange={e=>{setText(e.target.value); setErr("");}} placeholder="ここに結果JSONを貼り付け" rows={6}
+            style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:10,fontSize:12,fontFamily:"ui-monospace, SFMono-Regular, Menlo, monospace"}}/>
+          {err&&<div style={{marginTop:8,color:"#b42318",fontSize:12,fontWeight:700}}>{err}</div>}
+          <div style={{display:"flex",gap:10,marginTop:10}}>
+            <button onClick={()=>{setText(""); setErr("");}} style={btnStyle("transparent",C.ink,{border:`1px solid ${C.line}`,flex:1})}>クリア</button>
+            <button onClick={()=>{try{const p=JSON.parse(text); if(!p||typeof p!=="object") throw new Error(); onImport?.(p); setOpen(false);}catch{setErr("JSONの形式が不正です");}}}
+              style={btnStyle(C.accent,"#fff",{flex:1})}>復元する</button>
+          </div>
+          <div style={{marginTop:8,fontSize:11,color:C.muted,lineHeight:1.5}}>
+            ※復元すると、この端末の保存データも上書きされます
+          </div>
+        </div>
+      )}
     </div>
   );
 }
