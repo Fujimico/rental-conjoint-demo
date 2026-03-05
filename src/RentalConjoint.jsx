@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -218,7 +218,9 @@ export default function App(){
   const[taskIdx, setTaskIdx] =useState(0);
   const[resps,   setResps]   =useState([]);
   const[feedback,setFeedback]=useState(null);
-  const[results, setResults] =useState(null);
+  
+  const [midShown, setMidShown] = useState(false);
+const[results, setResults] =useState(null);
 
   const progress=(taskIdx/TASKS.length)*100;
 
@@ -231,8 +233,12 @@ export default function App(){
   }
   function afterFeedback(){
     setFeedback(null);
-    if(taskIdx<TASKS.length-1)setTaskIdx(taskIdx+1);
-    else finalize(resps);
+    setTaskIdx(prev => {
+      const next = prev + 1;
+      if (next < TASKS.length) return next;
+      finalize(resps);
+      return prev;
+    });
   }
   function finalize(rs){
     const b=runMAP(rs),pw=calcPartworths(b),imp=calcImportance(pw);
@@ -245,7 +251,7 @@ export default function App(){
   }
 
   if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
-  if(stage==="landing") return <LandingPage  onStart={()=>setStage("prereqs")}/>;
+  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }}/>;
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={()=>taskIdx>0&&setTaskIdx(taskIdx-1)}/>;
