@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -24,8 +24,8 @@ const BYO_ITEMS = [
 
 const BYO_OPTIONS = [
   { value:"must", label:"必須",       bg:"#2B5EA7", fg:"#fff" },
-  { value:"no",   label:"不要",       bg:"#888",    fg:"#fff" },
-  { value:"any",  label:"どちらでも", bg:"#4A7C59", fg:"#fff" },
+  { value:"no",   label:"避けたい",   bg:"#888",    fg:"#fff" },
+  { value:"any",  label:"気にしない", bg:"#4A7C59", fg:"#fff" },
 ];
 
 // ── カラートークン ─────────────────────────────
@@ -110,31 +110,34 @@ function buildTasks() {
 
 const TASKS = buildTasks();
 
-// ── 相場取得 API ──────────────────────────────
+const STORAGE_KEY = "rentalConjoint:lastResult:v1";
+
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  }
+}
+function saveResult(payload) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+
+// ── 相場取得（現在は無効化・手入力誘導）──────────
+// TODO: サーバ側プロキシ実装後に復帰
+// 直接外部AI APIをブラウザから叩くと、APIキー漏洩・CORSのリスクがあるため停止中
 async function fetchRentFloor(area, btypes) {
-  const typeLabel = btypes.length===BTYPE_OPTIONS.length
-    ? "マンション・アパート・一戸建て全般"
-    : btypes.map(id=>BTYPE_OPTIONS.find(o=>o.id===id)?.label).join("・");
-
-  const prompt =
-`賃貸物件の相場を教えてください。
-エリア：${area}
-建物タイプ：${typeLabel}
-このエリアで${typeLabel}を借りる場合、一般的な月額賃料の「実勢下限」（最も安い層の目安）を円単位の整数で答えてください。ワンルーム〜1LDK程度を想定。回答は数字のみ（例: 55000）。説明不要。`;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:"claude-sonnet-4-20250514",
-      max_tokens:50,
-      messages:[{role:"user",content:prompt}],
-    }),
-  });
-  const data = await res.json();
-  const text = data.content?.[0]?.text?.trim()??"";
-  const num  = parseInt(text.replace(/[^0-9]/g,""),10);
-  return isNaN(num)?null:num;
+  return null;
 }
 
 // ── CBC エンジン ──────────────────────────────
@@ -231,6 +234,13 @@ const[results, setResults] =useState(null);
     if(taskIdx<TASKS.length-1)setTaskIdx(taskIdx+1);
     else finalize(nr);
   }
+  function goBack(){
+    setTaskIdx(prev => {
+      const nextIdx = Math.max(0, prev - 1);
+      setResps(rp => rp.slice(0, nextIdx));
+      return nextIdx;
+    });
+  }
   function afterFeedback(){
     setFeedback(null);
     setTaskIdx(prev => {
@@ -242,7 +252,16 @@ const[results, setResults] =useState(null);
   }
   function finalize(rs){
     const b=runMAP(rs),pw=calcPartworths(b),imp=calcImportance(pw);
-    setResults({pw,imp,rec:getRecommendation(pw,btypes)});
+    const payload = {
+      savedAt: new Date().toISOString(),
+      prereqs,
+      btypes,
+      byo,
+      results: { pw, imp, rec: getRecommendation(pw, btypes) },
+    };
+    setResults(payload.results);
+    saveResult(payload);
+    setSaved(payload);
     setStage("result");
   }
   function restart(){
@@ -251,10 +270,10 @@ const[results, setResults] =useState(null);
   }
 
   if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
-  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }}/>;
+  if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved?.results){ setResults(saved.results); setStage("result"); } }}/>;
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
-  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={()=>taskIdx>0&&setTaskIdx(taskIdx-1)}/>;
+  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
   if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} onRestart={restart}/>;
   return null;
 }
@@ -279,7 +298,7 @@ function Header({taskNum,total}){
 // ─────────────────────────────────────────────
 // LANDING
 // ─────────────────────────────────────────────
-function LandingPage({onStart}){
+function LandingPage({onStart, hasSaved, onOpenSaved}){
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
@@ -478,7 +497,11 @@ function BYOPage({byo,setByo,onNext,onBack}){
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:600,margin:"0 auto",padding:"60px 24px"}}>
-        <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 不要 / どちらでも」を選んでください。"/>
+        <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 避けたい / 気にしない」を選んでください。"/>
+        <div style={{fontSize:12,color:C.muted,margin:"-18px 0 18px",lineHeight:1.6}}>
+          「避けたい」= できれば付いていない方が良い（賃料が上がる等の理由で）
+          ／「気にしない」= あってもなくてもOK
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:28}}>
           {BYO_ITEMS.map(item=>(
             <div key={item.id} style={{
@@ -619,6 +642,7 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
   const mustItems=BYO_ITEMS.filter(i=>byo[i.id]==="must");
   const noItems=BYO_ITEMS.filter(i=>byo[i.id]==="no");
+  const anyItems=BYO_ITEMS.filter(i=>byo[i.id]==="any");
   const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
 
   return(
@@ -729,7 +753,7 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
           )}
           {noItems.length>0&&(
             <div>
-              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>× 不要</div>
+              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>× 避けたい</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {noItems.map(i=>(
                   <span key={i.id} style={{background:C.bg,border:`1px solid ${C.line}`,color:C.muted,padding:"4px 12px",borderRadius:20,fontSize:12}}>{i.label}</span>
@@ -737,6 +761,7 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
               </div>
             </div>
           )}
+          <div style={{marginTop:10,fontSize:12,color:C.muted}}>気にしない設備：{anyItems.length}件</div>
         </div>
 
         <div style={{display:"flex",gap:12}}>
