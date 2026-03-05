@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -760,6 +760,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
           <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("結果JSONをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 結果JSONをコピー</button>
           <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🧹 保存を消す</button>
           <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{flex:1})}>↩ もう一度やってみる</button>
+/button>
         </div>
       </div>
     </div>
