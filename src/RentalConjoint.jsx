@@ -807,7 +807,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
 
         <div style={{display:"flex",gap:12}}>
           <button onClick={()=>window.print()} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🖨️ 印刷・保存</button>
-          <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("結果JSONをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 結果JSONをコピー</button>
+          <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("別機種表示用データをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 別機種での結果表示用データ</button>
           <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🧹 保存を消す</button>
           <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{flex:1})}>↩ もう一度やってみる</button>
         </div>
@@ -827,16 +827,16 @@ function ImportBox({onImport}){
   return (
     <div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:12,padding:"12px 14px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-        <div style={{fontWeight:800,fontSize:12,color:C.ink}}>JSONから復元（別URL/別端末から移行したい時）</div>
+        <div style={{fontWeight:800,fontSize:12,color:C.ink}}>別機種での結果表示</div>
         <button onClick={()=>setOpen(o=>!o)} style={btnStyle(open?C.ink:"transparent",open?"#fff":C.ink,{padding:"8px 10px",borderRadius:10,border:open?"none":`1px solid ${C.line}`})}>
           {open?"閉じる":"開く"}
         </button>
       </div>
       {open&&(
         <div style={{marginTop:10}}>
-          <textarea value={text} onChange={e=>{setText(e.target.value); setErr("");}} placeholder="ここに結果JSONを貼り付け" rows={6}
+          <textarea value={text} onChange={e=>{setText(e.target.value); setErr("");}} placeholder="ここにコピーしたデータを貼り付け" rows={6}
             style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:10,fontSize:12,fontFamily:"ui-monospace, SFMono-Regular, Menlo, monospace"}}/>
-          {err&&<div style={{marginTop:8,color:"#b42318",fontSize:12,fontWeight:700}}>{err}</div>}
+          {err&&<div style={{marginTop:8,color:"#b42318",fontSize:12,fontWeight:700}}>データの形式が正しくありません</div>}
           <div style={{display:"flex",gap:10,marginTop:10}}>
             <button onClick={()=>{setText(""); setErr("");}} style={btnStyle("transparent",C.ink,{border:`1px solid ${C.line}`,flex:1})}>クリア</button>
             <button onClick={()=>{try{const p=JSON.parse(text); if(!p||typeof p!=="object") throw new Error(); onImport?.(p); setOpen(false);}catch{setErr("JSONの形式が不正です");}}}
