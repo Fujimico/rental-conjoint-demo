@@ -267,7 +267,7 @@ function Header({taskNum,total}){
     <div style={{borderBottom:`1px solid ${C.line}`,background:C.card}}>
       <div style={{maxWidth:960,margin:"0 auto",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
-          <div style={{fontWeight:900,fontSize:17,letterSpacing:"-0.5px",color:C.ink}}>住まい本音診断</div>
+          <div style={{fontWeight:900,fontSize:17,letterSpacing:"-0.5px",color:C.ink}}>住まい優先度診断</div>
           <div style={{fontSize:10,color:C.muted,marginTop:1,letterSpacing:0.5}}>Your Home Preference Analysis</div>
         </div>
         {taskNum!=null&&<div style={{fontFamily:"monospace",fontSize:13,color:C.muted,fontWeight:600}}>Q {taskNum} / {total}</div>}
@@ -292,14 +292,14 @@ function LandingPage({onStart}){
         </h1>
         <p style={{fontSize:15,color:C.muted,lineHeight:1.8,marginBottom:44}}>
           「駅近か、広さか」「新築か、コスパか」——住まい探しでは、全部は叶わないものです。
-          15回の比較選択に答えるだけで、あなたの本音の優先順位を数値化し、ぴったりな物件タイプを提案します。
+          15回の比較選択に答えるだけで、あなたが重視する傾向（優先順位）を数値化し、ぴったりな物件タイプを提案します。
         </p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:48}}>
           {[
             {n:"01",t:"基本条件の設定",     d:"エリア・建物タイプ・賃料の前提を入力"},
             {n:"02",t:"設備のこだわり確認",  d:"ペット可・駐車場など設備の希望を選択"},
             {n:"03",t:"15問の比較選択",     d:"3つの物件を比べてより好みのものを選ぶ"},
-            {n:"04",t:"本音レポート",        d:"重視度スコアとぴったりな物件タイプを表示"},
+            {n:"04",t:"優先度レポート",      d:"重視度スコアとぴったりな物件タイプを表示"},
           ].map(item=>(
             <div key={item.n} style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:12,padding:"20px"}}>
               <div style={{fontFamily:"monospace",fontSize:10,color:C.accent,marginBottom:6,fontWeight:700}}>{item.n}</div>
@@ -627,7 +627,7 @@ function ResultPage({results,prereqs,btypes,byo,onRestart}){
       <div style={{maxWidth:800,margin:"0 auto",padding:"56px 24px 80px"}}>
         <div style={{marginBottom:44}}>
           <div style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:2,marginBottom:12}}>RESULT</div>
-          <h2 style={{fontSize:36,fontWeight:900,color:C.ink,marginBottom:10,letterSpacing:"-1px"}}>あなたの住まい本音レポート</h2>
+          <h2 style={{fontSize:36,fontWeight:900,color:C.ink,marginBottom:10,letterSpacing:"-1px"}}>あなたの住まい優先度レポート</h2>
           {prereqs.area&&(
             <p style={{fontSize:13,color:C.muted}}>
               エリア：{prereqs.area}　タイプ：{selBtypes.map(o=>o.label).join("・")}
