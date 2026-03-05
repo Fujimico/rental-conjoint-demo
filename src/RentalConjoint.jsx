@@ -273,7 +273,7 @@ const[results, setResults] =useState(null);
   if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
   if(stage==="landing") return <LandingPage  onStart={()=>{ setMidShown(false); setStage("prereqs"); }} hasSaved={!!saved} onOpenSaved={()=>{ if(saved){ if(saved.prereqs) setPrereqs(saved.prereqs); if(saved.btypes) setBtypes(saved.btypes); if(saved.byo) setByo(saved.byo); if(saved.results) setResults(saved.results); setStage("result"); } }}/>;
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
-  if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
+  if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
   if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} onRestart={restart}/>;
   return null;
@@ -329,11 +329,6 @@ function LandingPage({onStart, hasSaved, onOpenSaved}){
           ))}
         </div>
         <button onClick={onStart} style={btnStyle(C.ink,"#fff",{fontSize:16,padding:"16px 44px"})}>診断を始める →</button>
-        {hasSaved&&(
-          <button onClick={onOpenSaved} style={btnStyle("transparent",C.accent,{marginTop:14,border:`1px solid ${C.accent}`,padding:"12px 18px",borderRadius:10,fontWeight:800})}>
-            前回のレポートを開く
-          </button>
-        )}
       </div>
     </div>
   );
@@ -496,16 +491,20 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
 // ─────────────────────────────────────────────
 // BYO
 // ─────────────────────────────────────────────
-function BYOPage({byo,setByo,onNext,onBack}){
+function BYOPage({byo,setByo,btypes,onNext,onBack}){
   const set1=(id,val)=>setByo(p=>({...p,[id]:val}));
-  const allDone=BYO_ITEMS.every(i=>byo[i.id]);
+  const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
+  const allDone=activeItems.every(i=>byo[i.id]);
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:600,margin:"0 auto",padding:"60px 24px"}}>
         <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 条件にしない」を選んでください。"/>
+        <div style={{fontSize:12,color:C.muted,margin:"-18px 0 18px",lineHeight:1.6}}>
+          「必須」= この条件がない物件は除外する想定 ／「条件にしない」= あってもなくてもOK
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:28}}>
-          {BYO_ITEMS.map(item=>(
+          {activeItems.map(item=>(
             <div key={item.id} style={{
               background:C.card,border:`1.5px solid ${byo[item.id]?C.accent:C.line}`,
               borderRadius:12,padding:"14px 18px",
@@ -530,7 +529,6 @@ function BYOPage({byo,setByo,onNext,onBack}){
             </div>
           ))}
         </div>
-        <div style={{fontSize:12,color:C.muted,marginBottom:10}}>※この結果はこの端末（このブラウザ）に自動保存されます</div>
         <div style={{display:"flex",gap:12}}>
           <button onClick={onBack} style={btnStyle("transparent",C.muted,{border:`1px solid ${C.line}`})}>← 戻る</button>
           <button onClick={onNext} disabled={!allDone}
@@ -643,9 +641,10 @@ function FeedbackPage({msg,onContinue}){
 function ResultPage({results,prereqs,btypes,byo,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
-  const mustItems=BYO_ITEMS.filter(i=>byo[i.id]==="must");
-  const anyItems=BYO_ITEMS.filter(i=>byo[i.id]==="any");
-const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
+  const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
+  const mustItems=activeItems.filter(i=>byo[i.id]==="must");
+  const anyItems=activeItems.filter(i=>byo[i.id]==="any");
+  const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
 
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
