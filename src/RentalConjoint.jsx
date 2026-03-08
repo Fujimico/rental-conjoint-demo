@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -27,6 +27,11 @@ const BYO_OPTIONS = [
   { value:"any",  label:"条件にしない", bg:"#4A7C59", fg:"#fff" },
 ];
 
+// ── デフォルトBYO（全項目「条件にしない」）──────
+function defaultByo() {
+  return Object.fromEntries(BYO_ITEMS.map(i => [i.id, "any"]));
+}
+
 // ── カラートークン ─────────────────────────────
 const C = {
   bg:"#F5F0E8", card:"#FFFFFF", ink:"#1C1814", muted:"#7A7470",
@@ -38,13 +43,14 @@ const btnStyle = (bg, fg="#fff", ex={}) => ({
   padding:"14px 28px", fontSize:15, fontWeight:700, cursor:"pointer", ...ex,
 });
 
+// ── CBC問題数（15→9問）────────────────────────
+const CBC_TASK_COUNT = 9;
+
 // ── タスク生成（支配ペア除去）─────────────────
 function buildTasks() {
-  // シード付き乱数
   let s = 73819;
   const rnd = () => { s=(s*1664525+1013904223)>>>0; return s/4294967295; };
 
-  // Fisher-Yates shuffle
   function shuffle(arr) {
     const a=[...arr];
     for(let i=a.length-1;i>0;i--){
@@ -54,7 +60,6 @@ function buildTasks() {
     return a;
   }
 
-  // 支配チェック（xがyを支配するか）
   function dominates(x,y) {
     let better=false;
     for(const at of ATTRS){
@@ -65,7 +70,6 @@ function buildTasks() {
     return better;
   }
 
-  // プロファイルプール
   const pool=[];
   for(let w=0;w<4;w++)
     for(let a=0;a<4;a++)
@@ -74,32 +78,28 @@ function buildTasks() {
 
   const tasks=[];
   let tries=0;
-  while(tasks.length<15 && tries<5000){
+  while(tasks.length<CBC_TASK_COUNT && tries<5000){
     tries++;
     const [p0,p1,p2]=shuffle(pool).slice(0,3);
     const trio=[p0,p1,p2];
 
-    // 支配ペアがあればスキップ
     if(dominates(p0,p1)||dominates(p1,p0)) continue;
     if(dominates(p0,p2)||dominates(p2,p0)) continue;
     if(dominates(p1,p2)||dominates(p2,p1)) continue;
 
-    // 2属性以上同じペアがあれば退屈なのでスキップ
     const tooClose = trio.some((a,i)=>trio.some((b,j)=>{
       if(i>=j) return false;
       return ATTRS.filter(at=>a[at.id]===b[at.id]).length>=2;
     }));
     if(tooClose) continue;
 
-    // 重複タスクチェック
     const key=trio.map(p=>`${p.walk}${p.age}${p.area}`).sort().join("-");
     if(tasks.some(t=>t.key===key)) continue;
 
     tasks.push({id:tasks.length+1, profiles:trio, key});
   }
 
-  // 万が一足りなければ無条件で追加
-  while(tasks.length<15){
+  while(tasks.length<CBC_TASK_COUNT){
     const [p0,p1,p2]=shuffle(pool).slice(0,3);
     tasks.push({id:tasks.length+1, profiles:[p0,p1,p2], key:"fallback"});
   }
@@ -109,35 +109,10 @@ function buildTasks() {
 
 const TASKS = buildTasks();
 
-const STORAGE_KEY = "rentalConjoint:lastResult:v1";
-
-
-function loadSaved() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    return data && typeof data === "object" ? data : null;
-  } catch {
-    return null;
-  }
-}
-function saveResult(payload) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-
-// ── 相場取得（現在は無効化・手入力誘導）──────────
-// TODO: サーバ側プロキシ実装後に復帰
-// 直接外部AI APIをブラウザから叩くと、APIキー漏洩・CORSのリスクがあるため停止中
-async function fetchRentFloor(area, btypes) {
-  return null;
-}
+// ── ストレージ（メモリ内）────────────────────
+let _memStore = null;
+function loadSaved() { return _memStore; }
+function saveResult(payload) { _memStore = payload; return true; }
 
 // ── CBC エンジン ──────────────────────────────
 function effectCode(lvl,n){
@@ -189,12 +164,6 @@ function calcImportance(pw){
   return imp;
 }
 
-function getMidFeedback(responses){
-  const b=runMAP(responses,60,0.1,0.05),pw=calcPartworths(b),imp=calcImportance(pw);
-  const topId=Object.entries(imp).sort(([,a],[,b])=>b-a)[0][0];
-  const attr=ATTRS.find(a=>a.id===topId),best=pw[topId].indexOf(Math.max(...pw[topId]));
-  return{attr,level:attr.levels[best]};
-}
 
 function getRecommendation(pw,btypes){
   const bw=pw.walk.indexOf(Math.max(...pw.walk));
@@ -214,30 +183,19 @@ function getRecommendation(pw,btypes){
 // ─────────────────────────────────────────────
 export default function App(){
   const[stage,   setStage]   =useState("landing");
-  const[saved,  setSaved]  =useState(()=>loadSaved());
-
-  // landing に戻った時も localStorage から再読込（再診断で state をリセットしても「前回レポート」を出す）
-  useEffect(() => {
-    if (stage !== "landing") return;
-    const s = loadSaved();
-    if (s) setSaved(s);
-  }, [stage]);
+  const[saved,   setSaved]   =useState(()=>loadSaved());
   const[prereqs, setPrereqs] =useState({rentMin:"",rentMax:"",area:""});
   const[btypes,  setBtypes]  =useState([]);
-  const[byo,     setByo]     =useState({});
+  const[byo,     setByo]     =useState(()=>defaultByo());
   const[taskIdx, setTaskIdx] =useState(0);
   const[resps,   setResps]   =useState([]);
-  const[feedback,setFeedback]=useState(null);
-  
-  const [midShown, setMidShown] = useState(false);
-const[results, setResults] =useState(null);
+  const[results, setResults] =useState(null);
 
   const progress=(taskIdx/TASKS.length)*100;
 
   function handleChoice(chosenIdx){
     const nr=[...resps,{profiles:TASKS[taskIdx].profiles,chosen:chosenIdx}];
     setResps(nr);
-    if(taskIdx===7 && !midShown){setMidShown(true);setFeedback(getMidFeedback(nr));return;}
     if(taskIdx<TASKS.length-1)setTaskIdx(taskIdx+1);
     else finalize(nr);
   }
@@ -246,15 +204,6 @@ const[results, setResults] =useState(null);
       const nextIdx = Math.max(0, prev - 1);
       setResps(rp => rp.slice(0, nextIdx));
       return nextIdx;
-    });
-  }
-  function afterFeedback(){
-    setFeedback(null);
-    setTaskIdx(prev => {
-      const next = prev + 1;
-      if (next < TASKS.length) return next;
-      finalize(resps);
-      return prev;
     });
   }
   function finalize(rs){
@@ -272,40 +221,37 @@ const[results, setResults] =useState(null);
     setStage("result");
   }
   function restart(){
-    setMidShown(false);
     setStage("landing");setPrereqs({rentMin:"",rentMax:"",area:""});
-    setBtypes([]);setByo({});setTaskIdx(0);setResps([]);setFeedback(null);setResults(null);
+    setBtypes([]);setByo(defaultByo());setTaskIdx(0);setResps([]);setResults(null);
   }
 
-
-const openSaved = () => {
-  const s = saved || loadSaved();
-  if (!s) return;
-  if (s.prereqs) setPrereqs(s.prereqs);
-  if (s.btypes) setBtypes(s.btypes);
-  if (s.byo) setByo(s.byo);
-  if (s.results) setResults(s.results);
-  setSaved(s);
-  setStage("result");
-};
-
-const importSaved = (payload) => {
-  if (!payload || typeof payload !== "object") return;
-  try {
-    if (payload.prereqs) setPrereqs(payload.prereqs);
-    if (payload.btypes) setBtypes(payload.btypes);
-    if (payload.byo) setByo(payload.byo);
-    if (payload.results) setResults(payload.results);
-    saveResult(payload);
-    setSaved(payload);
+  const openSaved = () => {
+    const s = saved || loadSaved();
+    if (!s) return;
+    if (s.prereqs) setPrereqs(s.prereqs);
+    if (s.btypes) setBtypes(s.btypes);
+    if (s.byo) setByo(s.byo);
+    if (s.results) setResults(s.results);
+    setSaved(s);
     setStage("result");
-  } catch {}
-};
+  };
 
-  if(feedback)          return <FeedbackPage msg={feedback} onContinue={afterFeedback}/>;
+  const importSaved = (payload) => {
+    if (!payload || typeof payload !== "object") return;
+    try {
+      if (payload.prereqs) setPrereqs(payload.prereqs);
+      if (payload.btypes) setBtypes(payload.btypes);
+      if (payload.byo) setByo(payload.byo);
+      if (payload.results) setResults(payload.results);
+      saveResult(payload);
+      setSaved(payload);
+      setStage("result");
+    } catch {}
+  };
+
   if(stage==="landing") return (
     <LandingPage
-      onStart={()=>{ setMidShown(false); setStage("prereqs"); }}
+      onStart={()=>setStage("prereqs")}
       hasSaved={!!saved}
       onOpenSaved={openSaved}
       onImportSaved={importSaved}
@@ -314,7 +260,7 @@ const importSaved = (payload) => {
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
-  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} onClearSaved={()=>{ try{ localStorage.removeItem(STORAGE_KEY);}catch{} setSaved(null); }} onRestart={restart}/>;
+  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} onClearSaved={()=>{ _memStore=null; setSaved(null); }} onRestart={restart}/>;
   return null;
 }
 
@@ -344,20 +290,20 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
       <Header/>
       <div style={{maxWidth:700,margin:"0 auto",padding:"72px 24px 80px"}}>
         <div style={{display:"inline-block",background:C.accentL,color:C.accent,fontSize:11,fontWeight:700,padding:"4px 14px",borderRadius:20,letterSpacing:1,marginBottom:28}}>
-          所要時間 約4〜6分
+          所要時間 約3〜4分
         </div>
         <h1 style={{fontSize:"clamp(28px,5.5vw,48px)",fontWeight:900,lineHeight:1.2,color:C.ink,marginBottom:20,letterSpacing:"-1px"}}>
           あなたが<span style={{color:C.accent}}>本当に求める</span><br/>住まいの条件を知る
         </h1>
         <p style={{fontSize:15,color:C.muted,lineHeight:1.8,marginBottom:44}}>
           「駅近か、広さか」「新築か、コスパか」——住まい探しでは、全部は叶わないものです。
-          15回の比較選択に答えるだけで、あなたが重視する傾向（優先順位）を数値化し、ぴったりな物件タイプを提案します。
+          9回の比較選択に答えるだけで、あなたが重視する傾向（優先順位）を数値化し、ぴったりな物件タイプを提案します。
         </p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:48}}>
           {[
             {n:"01",t:"基本条件の設定",     d:"エリア・建物タイプ・賃料の前提を入力"},
             {n:"02",t:"設備のこだわり確認",  d:"ペット可・駐車場など設備の希望を選択"},
-            {n:"03",t:"15問の比較選択",     d:"3つの物件を比べてより好みのものを選ぶ"},
+            {n:"03",t:"9問の比較選択",      d:"3つの物件を比べてより好みのものを選ぶ"},
             {n:"04",t:"優先度レポート",      d:"重視度スコアとぴったりな物件タイプを表示"},
           ].map(item=>(
             <div key={item.n} style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:12,padding:"20px"}}>
@@ -373,10 +319,7 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
             前回のレポートを開く
           </button>
         )}
-        <div style={{marginTop:14,fontSize:12,color:C.muted,lineHeight:1.6}}>
-          ※保存は「このURL × このブラウザ」に保持されます（プレビューURLや別ブラウザだと引き継がれません）
-        </div>
-        <div style={{marginTop:14}}>
+        <div style={{marginTop:20}}>
           <ImportBox onImport={onImportSaved}/>
         </div>
       </div>
@@ -389,13 +332,6 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
 // ─────────────────────────────────────────────
 function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
   const[foc,setFoc]=useState({});
-  const[loading,setLoading]=useState(false);
-  const[suggested,setSuggested]=useState(null);
-  const[suggestErr,setSuggestErr]=useState(false);
-  const[userEditedMin,setUserEditedMin]=useState(false);
-  const debRef=useRef(null);
-  const btRef=useRef(btypes);
-  btRef.current=btypes;
 
   const fo=id=>setFoc(p=>({...p,[id]:true}));
   const fb=id=>setFoc(p=>({...p,[id]:false}));
@@ -406,34 +342,9 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
     boxSizing:"border-box",background:"#FAFAF8",
   });
 
-  function doFetch(area,types){
-    if(!area.trim()||types.length===0)return;
-    clearTimeout(debRef.current);
-    debRef.current=setTimeout(async()=>{
-      setLoading(true);setSuggestErr(false);
-      try{
-        const floor=await fetchRentFloor(area,types);
-        if(floor!=null){
-          setSuggested(floor);
-          setUserEditedMin(prev=>{
-            if(!prev) setPrereqs(p=>({...p,rentMin:String(floor)}));
-            return prev;
-          });
-        }else setSuggestErr(true);
-      }catch{setSuggestErr(true);}
-      finally{setLoading(false);}
-    },800);
-  }
-
-  function handleAreaBlur(){
-    fb("ar");
-    doFetch(prereqs.area,btRef.current);
-  }
-
   function toggleBtype(id){
     const next=btypes.includes(id)?btypes.filter(x=>x!==id):[...btypes,id];
     setBtypes(next);
-    doFetch(prereqs.area,next);
   }
 
   const valid=prereqs.area.trim().length>0&&btypes.length>0;
@@ -441,7 +352,6 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{maxWidth:580,margin:"0 auto",padding:"60px 24px"}}>
         <Step n="1" label="基本条件の設定" sub="診断の前提条件を入力してください。賃料は比較選択には使いません。"/>
 
@@ -452,7 +362,7 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
           <input type="text" placeholder="例: 渋谷区、横浜市、京都市など"
             value={prereqs.area}
             onChange={e=>setPrereqs(p=>({...p,area:e.target.value}))}
-            onFocus={()=>fo("ar")} onBlur={handleAreaBlur}
+            onFocus={()=>fo("ar")} onBlur={()=>fb("ar")}
             style={inp("ar")}/>
 
           {/* 建物タイプ */}
@@ -479,28 +389,12 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
 
           {/* 賃料 */}
           <div style={{marginTop:28}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <FLabel text="賃料の範囲（任意）"/>
-              {loading&&(
-                <span style={{fontSize:11,color:C.accent,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{display:"inline-block",width:11,height:11,border:`2px solid ${C.accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-                  相場を取得中...
-                </span>
-              )}
-              {!loading&&suggested&&!suggestErr&&(
-                <span style={{fontSize:11,color:C.green,fontWeight:700,background:"#F0FAF3",padding:"3px 10px",borderRadius:20,border:`1px solid ${C.green}`}}>
-                  ✓ 相場下限 {suggested.toLocaleString()}円 を提案
-                </span>
-              )}
-              {!loading&&suggestErr&&(
-                <span style={{fontSize:11,color:C.muted}}>相場取得に失敗しました</span>
-              )}
-            </div>
+            <FLabel text="賃料の範囲（任意）"/>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{position:"relative",flex:1}}>
                 <input type="number" placeholder="下限"
                   value={prereqs.rentMin}
-                  onChange={e=>{setUserEditedMin(true);setPrereqs(p=>({...p,rentMin:e.target.value}));}}
+                  onChange={e=>setPrereqs(p=>({...p,rentMin:e.target.value}))}
                   onFocus={()=>fo("rm")} onBlur={()=>fb("rm")}
                   style={{...inp("rm"),paddingRight:36}}/>
                 <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:C.muted}}>円</span>
@@ -515,17 +409,6 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
                 <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:C.muted}}>円</span>
               </div>
             </div>
-            {suggested&&!loading&&!suggestErr&&(
-              <div style={{marginTop:8,fontSize:11,color:C.muted,display:"flex",alignItems:"center",gap:8}}>
-                ※ {prereqs.area}の実勢相場から自動入力しました。
-                {userEditedMin&&(
-                  <button onClick={()=>{setUserEditedMin(false);setPrereqs(p=>({...p,rentMin:String(suggested)}));}}
-                    style={{fontSize:11,color:C.accent,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",padding:0}}>
-                    提案値に戻す
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -544,7 +427,7 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
 function BYOPage({byo,setByo,btypes,onNext,onBack}){
   const set1=(id,val)=>setByo(p=>({...p,[id]:val}));
   const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
-  const allDone=activeItems.every(i=>byo[i.id]);
+
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
@@ -556,7 +439,7 @@ function BYOPage({byo,setByo,btypes,onNext,onBack}){
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:28}}>
           {activeItems.map(item=>(
             <div key={item.id} style={{
-              background:C.card,border:`1.5px solid ${byo[item.id]?C.accent:C.line}`,
+              background:C.card,border:`1.5px solid ${byo[item.id]==="must"?C.accent:C.line}`,
               borderRadius:12,padding:"14px 18px",
               display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
               transition:"border-color 0.2s",
@@ -581,8 +464,8 @@ function BYOPage({byo,setByo,btypes,onNext,onBack}){
         </div>
         <div style={{display:"flex",gap:12}}>
           <button onClick={onBack} style={btnStyle("transparent",C.muted,{border:`1px solid ${C.line}`})}>← 戻る</button>
-          <button onClick={onNext} disabled={!allDone}
-            style={btnStyle(allDone?C.ink:"#CCC","#fff",{flex:1,cursor:allDone?"pointer":"not-allowed"})}>
+          <button onClick={onNext}
+            style={btnStyle(C.ink,"#fff",{flex:1})}>
             診断スタート →
           </button>
         </div>
@@ -665,27 +548,6 @@ function CBCPage({task,taskIdx,progress,onChoice,onBack}){
 }
 
 // ─────────────────────────────────────────────
-// MID FEEDBACK
-// ─────────────────────────────────────────────
-function FeedbackPage({msg,onContinue}){
-  return(
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{maxWidth:480,padding:"40px 32px",textAlign:"center"}}>
-        <div style={{fontSize:48,marginBottom:20}}>📊</div>
-        <div style={{fontSize:11,color:C.accent,fontWeight:700,letterSpacing:1,marginBottom:12}}>折り返しチェック</div>
-        <h2 style={{fontSize:26,fontWeight:900,color:C.ink,marginBottom:24}}>折り返し地点です</h2>
-        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:28,marginBottom:32}}>
-          <div style={{fontSize:12,color:C.muted,marginBottom:8}}>今のところ、あなたは...</div>
-          <div style={{fontSize:22,fontWeight:900,color:C.ink,marginBottom:4}}>「{msg.attr.label}：{msg.level}」</div>
-          <div style={{fontSize:13,color:C.muted}}>を重視する傾向が出ています</div>
-        </div>
-        <button onClick={onContinue} style={btnStyle(C.ink,"#fff",{fontSize:15,padding:"14px 40px"})}>後半へ進む →</button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
 // RESULT
 // ─────────────────────────────────────────────
 function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRestart}){
@@ -695,6 +557,30 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
   const mustItems=activeItems.filter(i=>byo[i.id]==="must");
   const anyItems=activeItems.filter(i=>byo[i.id]==="any");
   const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
+
+  // 営業向けサマリー生成
+  const topAttr = impOrder[0];
+  const topLevel = pw[topAttr.id].indexOf(Math.max(...pw[topAttr.id]));
+  const topLevelName = topAttr.attr.levels[topLevel];
+  const salesMemo = [
+    `■ 優先順位：${impOrder.map((item,i)=>`${i+1}位 ${item.attr.label}（${item.v.toFixed(0)}%）`).join(" → ")}`,
+    `■ 最重視条件：${topAttr.attr.label}「${topLevelName}」`,
+    mustItems.length > 0 ? `■ 必須設備：${mustItems.map(i=>i.label).join("・")}` : "■ 必須設備：なし",
+    `■ 推奨物件タイプ：${rec.name}`,
+    prereqs.area ? `■ 希望エリア：${prereqs.area}` : null,
+    (prereqs.rentMin||prereqs.rentMax) ? `■ 賃料：${prereqs.rentMin?Number(prereqs.rentMin).toLocaleString()+"円":""}〜${prereqs.rentMax?Number(prereqs.rentMax).toLocaleString()+"円":""}` : null,
+  ].filter(Boolean).join("\n");
+
+  const [copied, setCopied] = useState(false);
+  const handleCopySales = async () => {
+    try {
+      await navigator.clipboard.writeText(salesMemo);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      alert("コピーに失敗しました");
+    }
+  };
 
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
@@ -782,7 +668,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
         </div>
 
         {/* 希望まとめ */}
-        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:28}}>
+        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
           <SLabel text="設備・条件の希望まとめ"/>
           <div style={{marginBottom:16}}>
             <div style={{fontSize:11,fontWeight:700,color:C.accent,marginBottom:10}}>希望建物タイプ</div>
@@ -802,20 +688,51 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
               </div>
             </div>
           )}
-          <div style={{marginTop:10,fontSize:12,color:C.muted}}>条件にしない設備：{anyItems.length}件</div>
+          {anyItems.length>0&&(
+            <div style={{marginTop:10,fontSize:12,color:C.muted}}>条件にしない設備：{anyItems.map(i=>i.label).join("・")}</div>
+          )}
         </div>
 
-        <div style={{display:"flex",gap:12}}>
-          <button onClick={()=>window.print()} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🖨️ 印刷・保存</button>
-          <button onClick={async()=>{try{const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2); await navigator.clipboard.writeText(txt); alert("別機種表示用データをコピーしました");}catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>📋 別機種での結果表示用データ</button>
-          <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.ink,{flex:1,border:`1px solid ${C.line}`})}>🧹 保存を消す</button>
-          <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{flex:1})}>↩ もう一度やってみる</button>
+        {/* 営業メモ */}
+        <div style={{background:"#FFFBF0",border:`1.5px solid #E8D87A`,borderRadius:16,padding:28,marginBottom:28}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#7A6A00",letterSpacing:1.5,marginBottom:12}}>📋 担当者メモ（営業用）</div>
+          <pre style={{fontSize:12,color:C.ink,lineHeight:1.9,margin:0,whiteSpace:"pre-wrap",fontFamily:"inherit"}}>{salesMemo}</pre>
+          <button onClick={handleCopySales} style={{
+            marginTop:16,padding:"8px 20px",borderRadius:8,
+            background:copied?"#4A7C59":"transparent",
+            color:copied?"#fff":"#7A6A00",
+            border:`1.5px solid ${copied?"#4A7C59":"#C8B840"}`,
+            fontSize:12,fontWeight:700,cursor:"pointer",transition:"all 0.2s",
+          }}>
+            {copied?"✓ コピーしました":"コピーする"}
+          </button>
+        </div>
+
+        {/* アクションボタン（2×2グリッド） */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <button onClick={()=>window.print()} style={btnStyle(C.card,C.ink,{border:`1px solid ${C.line}`,padding:"14px 16px"})}>
+            🖨️ 印刷・保存
+          </button>
+          <button onClick={async()=>{
+            try{
+              const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2);
+              await navigator.clipboard.writeText(txt);
+              alert("他の端末での表示用データをコピーしました");
+            }catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}
+          }} style={btnStyle(C.card,C.ink,{border:`1px solid ${C.line}`,padding:"14px 16px"})}>
+            📤 他の端末で見る
+          </button>
+          <button onClick={()=>{if(confirm("保存したレポートを削除しますか？")) onClearSaved?.();}} style={btnStyle(C.card,C.muted,{border:`1px solid ${C.line}`,padding:"14px 16px"})}>
+            🧹 保存を消す
+          </button>
+          <button onClick={onRestart} style={btnStyle(C.ink,"#fff",{padding:"14px 16px"})}>
+            ↩ もう一度やってみる
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
 
 // ─────────────────────────────────────────────
 // ImportBox (JSON復元)
@@ -827,7 +744,7 @@ function ImportBox({onImport}){
   return (
     <div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:12,padding:"12px 14px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-        <div style={{fontWeight:800,fontSize:12,color:C.ink}}>別機種での結果表示</div>
+        <div style={{fontWeight:800,fontSize:12,color:C.ink}}>他の端末での結果表示</div>
         <button onClick={()=>setOpen(o=>!o)} style={btnStyle(open?C.ink:"transparent",open?"#fff":C.ink,{padding:"8px 10px",borderRadius:10,border:open?"none":`1px solid ${C.line}`})}>
           {open?"閉じる":"開く"}
         </button>
@@ -839,7 +756,7 @@ function ImportBox({onImport}){
           {err&&<div style={{marginTop:8,color:"#b42318",fontSize:12,fontWeight:700}}>データの形式が正しくありません</div>}
           <div style={{display:"flex",gap:10,marginTop:10}}>
             <button onClick={()=>{setText(""); setErr("");}} style={btnStyle("transparent",C.ink,{border:`1px solid ${C.line}`,flex:1})}>クリア</button>
-            <button onClick={()=>{try{const p=JSON.parse(text); if(!p||typeof p!=="object") throw new Error(); onImport?.(p); setOpen(false);}catch{setErr("JSONの形式が不正です");}}}
+            <button onClick={()=>{try{const p=JSON.parse(text); if(!p||typeof p!=="object") throw new Error(); onImport?.(p); setOpen(false);}catch{setErr("データの形式が正しくありません");}}}
               style={btnStyle(C.accent,"#fff",{flex:1})}>復元する</button>
           </div>
           <div style={{marginTop:8,fontSize:11,color:C.muted,lineHeight:1.5}}>
