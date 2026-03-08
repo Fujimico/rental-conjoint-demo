@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -181,15 +181,36 @@ function getRecommendation(pw,btypes){
 // ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
+// ── URLハッシュからペイロードを復元 ──────────
+function loadFromHash() {
+  try {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#d=")) return null;
+    const json = decodeURIComponent(atob(hash.slice(3)));
+    const data = JSON.parse(json);
+    return data && typeof data === "object" ? data : null;
+  } catch { return null; }
+}
+function buildShareUrl(payload) {
+  try {
+    const b64 = btoa(encodeURIComponent(JSON.stringify(payload)));
+    const base = window.location.href.split("#")[0];
+    return `${base}#d=${b64}`;
+  } catch { return null; }
+}
+
 export default function App(){
-  const[stage,   setStage]   =useState("landing");
-  const[saved,   setSaved]   =useState(()=>loadSaved());
-  const[prereqs, setPrereqs] =useState({rentMin:"",rentMax:"",area:""});
-  const[btypes,  setBtypes]  =useState([]);
-  const[byo,     setByo]     =useState(()=>defaultByo());
+  // URLハッシュに結果データがあれば直接result画面へ
+  const hashPayload = useState(()=>loadFromHash())[0];
+
+  const[stage,   setStage]   =useState(()=>hashPayload?"result":"landing");
+  const[saved,   setSaved]   =useState(()=>hashPayload||loadSaved());
+  const[prereqs, setPrereqs] =useState(()=>hashPayload?.prereqs||{rentMin:"",rentMax:"",area:""});
+  const[btypes,  setBtypes]  =useState(()=>hashPayload?.btypes||[]);
+  const[byo,     setByo]     =useState(()=>hashPayload?.byo||defaultByo());
   const[taskIdx, setTaskIdx] =useState(0);
   const[resps,   setResps]   =useState([]);
-  const[results, setResults] =useState(null);
+  const[results, setResults] =useState(()=>hashPayload?.results||null);
 
   const progress=(taskIdx/TASKS.length)*100;
 
@@ -260,7 +281,7 @@ export default function App(){
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
   if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
-  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} onClearSaved={()=>{ _memStore=null; setSaved(null); }} onRestart={restart}/>;
+  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} buildShareUrl={buildShareUrl} onClearSaved={()=>{ _memStore=null; setSaved(null); }} onRestart={restart}/>;
   return null;
 }
 
@@ -550,7 +571,47 @@ function CBCPage({task,taskIdx,progress,onChoice,onBack}){
 // ─────────────────────────────────────────────
 // RESULT
 // ─────────────────────────────────────────────
-function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRestart}){
+function QRModal({url, onClose}){
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(url)}`;
+  const [copied, setCopied] = useState(false);
+  const handleCopyUrl = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(()=>setCopied(false),2000); }
+    catch { alert("コピーに失敗しました"); }
+  };
+  return(
+    <div onClick={onClose} style={{
+      position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",
+      display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:24,
+    }}>
+      <div onClick={e=>e.stopPropagation()} style={{
+        background:C.card,borderRadius:20,padding:"36px 32px",maxWidth:360,width:"100%",textAlign:"center",
+        boxShadow:"0 24px 60px rgba(0,0,0,0.2)",
+      }}>
+        <div style={{fontSize:11,fontWeight:700,color:C.accent,letterSpacing:1.5,marginBottom:8}}>担当者に結果を共有</div>
+        <h3 style={{fontSize:20,fontWeight:900,color:C.ink,marginBottom:6}}>QRコードを見せてください</h3>
+        <p style={{fontSize:12,color:C.muted,marginBottom:24,lineHeight:1.7}}>
+          来店時に担当者のスマートフォンで<br/>スキャンすると結果が開きます
+        </p>
+        <div style={{
+          background:C.bg,borderRadius:12,padding:16,display:"inline-block",marginBottom:20,
+          border:`1px solid ${C.line}`,
+        }}>
+          <img src={qrSrc} alt="QRコード" width={180} height={180} style={{display:"block"}}/>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <button onClick={handleCopyUrl} style={btnStyle(copied?"#4A7C59":C.accentL, copied?"#fff":C.accent,{fontSize:13,padding:"10px 16px"})}>
+            {copied?"✓ URLをコピーしました":"🔗 URLをコピー"}
+          </button>
+          <button onClick={onClose} style={btnStyle("transparent",C.muted,{border:`1px solid ${C.line}`,fontSize:13,padding:"10px 16px"})}>
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onClearSaved,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
   const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
@@ -572,6 +633,8 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
   ].filter(Boolean).join("\n");
 
   const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const shareUrl = buildShareUrl?.(savedPayload??{prereqs,btypes,byo,results});
   const handleCopySales = async () => {
     try {
       await navigator.clipboard.writeText(salesMemo);
@@ -584,6 +647,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
 
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
+      {showQR&&shareUrl&&<QRModal url={shareUrl} onClose={()=>setShowQR(false)}/>}
       <Header/>
       <div style={{maxWidth:800,margin:"0 auto",padding:"56px 24px 80px"}}>
         <div style={{marginBottom:44}}>
@@ -708,8 +772,13 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,onClearSaved,onRest
           </button>
         </div>
 
-        {/* アクションボタン（2×2グリッド） */}
+        {/* アクションボタン（2×3グリッド） */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {shareUrl&&(
+            <button onClick={()=>setShowQR(true)} style={btnStyle(C.accent,"#fff",{padding:"14px 16px",gridColumn:"1 / -1"})}>
+              📱 担当者にQRコードで共有する
+            </button>
+          )}
           <button onClick={()=>window.print()} style={btnStyle(C.card,C.ink,{border:`1px solid ${C.line}`,padding:"14px 16px"})}>
             🖨️ 印刷・保存
           </button>
