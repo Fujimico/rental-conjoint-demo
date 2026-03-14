@@ -54,7 +54,7 @@ const CONCERN_OPTIONS = [
   "周辺環境（スーパー・治安・騒音など）",
   "建物や水回りの状態",
   "同居人・家族の納得",
-  "まだ何が気になるかはっきりしていない",
+  "まだ1つには絞れない",
 ];
 
 // ── タスク生成（支配ペア除去）─────────────────
@@ -702,7 +702,7 @@ function ConcernPage({concern,setConcern,onBack,onNext}){
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:620,margin:"0 auto",padding:"60px 24px"}}>
-        <Step n="4" total="4" label="最後に気になること" sub="このあと物件を決める前に、一番気になることを教えてください。追客や内見のご案内に使います。"/>
+        <Step n="4" total="4" label="最後に気になること" sub="物件を比較するときに、特に見落としたくないことを1つ選んでください。"/>
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:28}}>
           {CONCERN_OPTIONS.map(opt=>{
             const active = concern === opt;
@@ -795,7 +795,7 @@ function buildHesitationPoints(impOrder){
     pts.push(`${a.attr.label}が明確な軸ですが、${b.attr.label}との兼ね合いで最終判断が変わる可能性があります`);
   }
   if (c && gap2 < 6) {
-    pts.push(`3条件の差が小さめなので、内見時の印象や周辺環境で逆転しやすい傾向があります`);
+    pts.push(`3条件の差が小さめなので、内見時の印象や周辺環境で変わるかもしれません`);
   } else if (c) {
     pts.push(`${c.attr.label}は相対的に後順位なので、候補が絞れないときの調整弁として扱いやすいです`);
   }
@@ -961,7 +961,7 @@ function ResultPage({results,prereqs,btypes,byo,concern,savedPayload,buildShareU
           <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
             <SLabel text="決める前に気になること"/>
             <div style={{fontSize:16,fontWeight:800,color:C.ink,marginBottom:8}}>{concern}</div>
-            <div style={{fontSize:13,color:C.muted,lineHeight:1.7}}>この不安を先に解消できると、候補の比較と意思決定が進みやすくなります。</div>
+            <div style={{fontSize:13,color:C.muted,lineHeight:1.7}}>この不安を先に解消できると、候補の比較と選定が進みやすくなります。</div>
           </div>
         )}
 
