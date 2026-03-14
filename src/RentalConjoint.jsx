@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 // ── 属性定義 ──────────────────────────────────
 const ATTRS = [
@@ -109,10 +109,80 @@ function buildTasks() {
 
 const TASKS = buildTasks();
 
-// ── ストレージ（メモリ内）────────────────────
-let _memStore = null;
-function loadSaved() { return _memStore; }
-function saveResult(payload) { _memStore = payload; return true; }
+// ── ストレージ（localStorage）────────────────
+const STORAGE_KEY = "rentalConjointResultV1";
+
+function canUseStorage() {
+  return typeof window !== "undefined" && !!window.localStorage;
+}
+
+function loadSaved() {
+  if (!canUseStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveResult(payload) {
+  if (!canUseStorage()) return false;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearSaved() {
+  if (!canUseStorage()) return false;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+
+function formatRentRange(prereqs){
+  const min = prereqs?.rentMin ? Number(prereqs.rentMin) : null;
+  const max = prereqs?.rentMax ? Number(prereqs.rentMax) : null;
+  if (min && max) return `${min.toLocaleString()}〜${max.toLocaleString()}円`;
+  if (max) return `〜${max.toLocaleString()}円`;
+  if (min) return `${min.toLocaleString()}円〜`;
+  return "未入力";
+}
+
+function formatRentBand(prereqs){
+  const min = prereqs?.rentMin ? Number(prereqs.rentMin) : null;
+  const max = prereqs?.rentMax ? Number(prereqs.rentMax) : null;
+  if (min && max) return `想定賃料帯：${min.toLocaleString()}〜${max.toLocaleString()}円`;
+  if (max) return `想定賃料帯：〜${max.toLocaleString()}円`;
+  if (min) return `想定賃料帯：${min.toLocaleString()}円〜`;
+  return "想定賃料帯：ご入力の予算帯";
+}
+
+function useIsMobile(breakpoint = 720){
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth <= breakpoint;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
 
 // ── CBC エンジン ──────────────────────────────
 function effectCode(lvl,n){
@@ -201,7 +271,7 @@ function buildShareUrl(payload) {
 
 export default function App(){
   // URLハッシュに結果データがあれば直接result画面へ
-  const hashPayload = useState(()=>loadFromHash())[0];
+  const hashPayload = loadFromHash();
 
   const[stage,   setStage]   =useState(()=>hashPayload?"result":"landing");
   const[saved,   setSaved]   =useState(()=>hashPayload||loadSaved());
@@ -211,6 +281,13 @@ export default function App(){
   const[taskIdx, setTaskIdx] =useState(0);
   const[resps,   setResps]   =useState([]);
   const[results, setResults] =useState(()=>hashPayload?.results||null);
+
+  useEffect(() => {
+    if (hashPayload) return;
+    if (stage !== "landing") return;
+    const latest = loadSaved();
+    setSaved(latest);
+  }, [stage, hashPayload]);
 
   const progress=(taskIdx/TASKS.length)*100;
 
@@ -242,7 +319,9 @@ export default function App(){
     setStage("result");
   }
   function restart(){
-    setStage("landing");setPrereqs({rentMin:"",rentMax:"",area:""});
+    setStage("landing");
+    setSaved(loadSaved());
+    setPrereqs({rentMin:"",rentMax:"",area:""});
     setBtypes([]);setByo(defaultByo());setTaskIdx(0);setResps([]);setResults(null);
   }
 
@@ -280,8 +359,8 @@ export default function App(){
   );
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
-  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} onChoice={handleChoice} onBack={goBack}/>;
-  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} buildShareUrl={buildShareUrl} onClearSaved={()=>{ _memStore=null; setSaved(null); }} onRestart={restart}/>;
+  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} prereqs={prereqs} onChoice={handleChoice} onBack={goBack}/>;
+  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} buildShareUrl={buildShareUrl} onClearSaved={()=>{ clearSaved(); setSaved(null); }} onRestart={restart}/>;
   return null;
 }
 
@@ -294,7 +373,7 @@ function Header({taskNum,total}){
       <div style={{maxWidth:960,margin:"0 auto",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
           <div style={{fontWeight:900,fontSize:17,letterSpacing:"-0.5px",color:C.ink}}>住まい優先度診断</div>
-          <div style={{fontSize:10,color:C.muted,marginTop:1,letterSpacing:0.5}}>Your Home Preference Analysis</div>
+          <div style={{fontSize:10,color:C.muted,marginTop:1,letterSpacing:0.5}}>比較選択で住まいの優先度を可視化</div>
         </div>
         {taskNum!=null&&<div style={{fontFamily:"monospace",fontSize:13,color:C.muted,fontWeight:600}}>Q {taskNum} / {total}</div>}
       </div>
@@ -314,11 +393,14 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
           所要時間 約3〜4分
         </div>
         <h1 style={{fontSize:"clamp(28px,5.5vw,48px)",fontWeight:900,lineHeight:1.2,color:C.ink,marginBottom:20,letterSpacing:"-1px"}}>
-          あなたが<span style={{color:C.accent}}>本当に求める</span><br/>住まいの条件を知る
+          比較選択から<span style={{color:C.accent}}>住まいの優先度</span>を知る
         </h1>
-        <p style={{fontSize:15,color:C.muted,lineHeight:1.8,marginBottom:44}}>
-          「駅近か、広さか」「新築か、コスパか」——住まい探しでは、全部は叶わないものです。
-          9回の比較選択に答えるだけで、あなたが重視する傾向（優先順位）を数値化し、ぴったりな物件タイプを提案します。
+        <p style={{fontSize:15,color:C.muted,lineHeight:1.8,marginBottom:18}}>
+          「駅近か、広さか」「新築か、コスパか」——住まい探しでは、全部は同時に満たせないことが多いです。
+          9回の比較選択に答えるだけで、言葉だけでは見えにくい重視度の傾向を数値化し、合いそうな物件タイプを提案します。
+        </p>
+        <p style={{fontSize:13,color:C.muted,lineHeight:1.75,marginBottom:44}}>
+          前提として、比較では予算・エリア・建物タイプは揃っているものとして扱います。
         </p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:48}}>
           {[
@@ -413,7 +495,7 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
             <FLabel text="賃料の範囲（任意）"/>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{position:"relative",flex:1}}>
-                <input type="number" placeholder="下限"
+                <input type="number" inputMode="numeric" placeholder="下限"
                   value={prereqs.rentMin}
                   onChange={e=>setPrereqs(p=>({...p,rentMin:e.target.value}))}
                   onFocus={()=>fo("rm")} onBlur={()=>fb("rm")}
@@ -422,7 +504,7 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
               </div>
               <span style={{color:C.muted}}>〜</span>
               <div style={{position:"relative",flex:1}}>
-                <input type="number" placeholder="上限"
+                <input type="number" inputMode="numeric" placeholder="上限"
                   value={prereqs.rentMax}
                   onChange={e=>setPrereqs(p=>({...p,rentMax:e.target.value}))}
                   onFocus={()=>fo("rx")} onBlur={()=>fb("rx")}
@@ -498,8 +580,10 @@ function BYOPage({byo,setByo,btypes,onNext,onBack}){
 // ─────────────────────────────────────────────
 // CBC
 // ─────────────────────────────────────────────
-function CBCPage({task,taskIdx,progress,onChoice,onBack}){
+function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
   const[hov,setHov]=useState(null);
+  const isMobile = useIsMobile();
+  const rentBandText = useMemo(() => formatRentBand(prereqs), [prereqs]);
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <div style={{height:3,background:C.line}}>
@@ -510,10 +594,12 @@ function CBCPage({task,taskIdx,progress,onChoice,onBack}){
         <p style={{textAlign:"center",fontSize:18,fontWeight:700,color:C.ink,marginBottom:6}}>
           より希望に近い物件はどれですか？
         </p>
-        <p style={{textAlign:"center",fontSize:12,color:C.muted,marginBottom:36}}>
+        <p style={{textAlign:"center",fontSize:12,color:C.muted,marginBottom:36,lineHeight:1.7}}>
           賃料・エリア・建物タイプは同条件として比較してください
+          <br/>
+          比較しやすいよう、以下は同じ予算帯の候補として並べています
         </p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:32}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:14,marginBottom:32}}>
           {task.profiles.map((prof,idx)=>{
             const isH=hov===idx;
             return(
@@ -544,11 +630,14 @@ function CBCPage({task,taskIdx,progress,onChoice,onBack}){
                     <div style={{fontSize:9,fontWeight:700,color:isH?"rgba(255,255,255,0.45)":C.muted,marginBottom:3,letterSpacing:0.5}}>
                       {attr.short}
                     </div>
-                    <div style={{fontSize:14,fontWeight:700,color:isH?"#fff":C.ink}}>
+                    <div style={{fontSize:isMobile?13:14,fontWeight:700,color:isH?"#fff":C.ink,lineHeight:1.5}}>
                       {attr.levels[prof[attr.id]]}
                     </div>
                   </div>
                 ))}
+                <div style={{marginTop:4,fontSize:11,color:isH?"rgba(255,255,255,0.55)":C.muted,lineHeight:1.5}}>
+                  ※ {rentBandText}
+                </div>
                 <div style={{marginTop:8,fontSize:11,fontWeight:700,textAlign:"center",color:isH?"rgba(255,255,255,0.6)":C.accent}}>
                   {isH?"これを選ぶ ✓":"タップして選択"}
                 </div>
@@ -629,7 +718,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
     mustItems.length > 0 ? `■ 必須設備：${mustItems.map(i=>i.label).join("・")}` : "■ 必須設備：なし",
     `■ 推奨物件タイプ：${rec.name}`,
     prereqs.area ? `■ 希望エリア：${prereqs.area}` : null,
-    (prereqs.rentMin||prereqs.rentMax) ? `■ 賃料：${prereqs.rentMin?Number(prereqs.rentMin).toLocaleString()+"円":""}〜${prereqs.rentMax?Number(prereqs.rentMax).toLocaleString()+"円":""}` : null,
+    (prereqs.rentMin||prereqs.rentMax) ? `■ 賃料：${formatRentRange(prereqs)}` : null,
   ].filter(Boolean).join("\n");
 
   const [copied, setCopied] = useState(false);
@@ -656,9 +745,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           {prereqs.area&&(
             <p style={{fontSize:13,color:C.muted}}>
               エリア：{prereqs.area}　タイプ：{selBtypes.map(o=>o.label).join("・")}
-              {prereqs.rentMin&&prereqs.rentMax?`　賃料：${Number(prereqs.rentMin).toLocaleString()}〜${Number(prereqs.rentMax).toLocaleString()}円`
-                :prereqs.rentMax?`　賃料：〜${Number(prereqs.rentMax).toLocaleString()}円`
-                :prereqs.rentMin?`　賃料：${Number(prereqs.rentMin).toLocaleString()}円〜`:""}
+              {(prereqs.rentMin||prereqs.rentMax)?`　賃料：${formatRentRange(prereqs)}`:""}
             </p>
           )}
         </div>
@@ -671,7 +758,10 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
             <div style={{fontSize:44}}>{rec.icon}</div>
             <div>
               <h3 style={{fontSize:26,fontWeight:900,marginBottom:10,color:"#fff"}}>{rec.name}</h3>
-              <p style={{fontSize:13,color:"rgba(255,255,255,0.65)",lineHeight:1.75,maxWidth:480}}>{rec.desc}</p>
+              <p style={{fontSize:13,color:"rgba(255,255,255,0.65)",lineHeight:1.75,maxWidth:480,marginBottom:10}}>{rec.desc}</p>
+              <p style={{fontSize:12,color:"rgba(255,255,255,0.72)",lineHeight:1.75,maxWidth:560,margin:0}}>
+                まずは必須条件を満たす物件に絞り、その中でこの優先度に沿って探すのがおすすめです。
+              </p>
             </div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
