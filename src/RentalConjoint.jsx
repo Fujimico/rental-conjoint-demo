@@ -584,6 +584,7 @@ function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
   const[hov,setHov]=useState(null);
   const isMobile = useIsMobile();
   const rentBandText = useMemo(() => formatRentBand(prereqs), [prereqs]);
+  const comparePoints = useMemo(() => ATTRS.filter(attr => new Set(task.profiles.map(p => p[attr.id])).size > 1), [task]);
   return(
     <div style={{minHeight:"100vh",background:C.bg}}>
       <div style={{height:3,background:C.line}}>
@@ -591,14 +592,23 @@ function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
       </div>
       <Header taskNum={taskIdx+1} total={TASKS.length}/>
       <div style={{maxWidth:980,margin:"0 auto",padding:"44px 24px 64px"}}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.accent,letterSpacing:1}}>比較 {taskIdx+1} / {TASKS.length}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:4}}>あと{TASKS.length-(taskIdx+1)}回です</div>
+        </div>
         <p style={{textAlign:"center",fontSize:18,fontWeight:700,color:C.ink,marginBottom:6}}>
           より希望に近い物件はどれですか？
         </p>
-        <p style={{textAlign:"center",fontSize:12,color:C.muted,marginBottom:36,lineHeight:1.7}}>
+        <p style={{textAlign:"center",fontSize:12,color:C.muted,marginBottom:14,lineHeight:1.7}}>
           賃料・エリア・建物タイプは同条件として比較してください
           <br/>
           比較しやすいよう、以下は同じ予算帯の候補として並べています
         </p>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <span style={{display:"inline-block",background:C.accentL,color:C.accent,border:`1px solid ${C.line}`,borderRadius:999,padding:"8px 14px",fontSize:12,fontWeight:700}}>
+            見比べるポイント：{comparePoints.map(a=>a.label).join(' / ')}
+          </span>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:14,marginBottom:32}}>
           {task.profiles.map((prof,idx)=>{
             const isH=hov===idx;
@@ -622,19 +632,29 @@ function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
                 }}>
                   {["A","B","C"][idx]}
                 </div>
-                {ATTRS.map((attr,ai)=>(
+                {ATTRS.map((attr,ai)=>{
+                  const isDiff = comparePoints.some(a=>a.id===attr.id);
+                  return (
                   <div key={attr.id} style={{
                     borderBottom:ai<ATTRS.length-1?`1px solid ${isH?"rgba(255,255,255,0.1)":C.line}`:"none",
                     paddingBottom:12,marginBottom:12,
+                    borderRadius:10,
+                    paddingLeft: isDiff ? 10 : 0,
+                    paddingRight: isDiff ? 10 : 0,
+                    paddingTop: isDiff ? 8 : 0,
+                    background:isDiff ? (isH?"rgba(255,255,255,0.08)":"#F8F4EC") : "transparent",
                   }}>
-                    <div style={{fontSize:9,fontWeight:700,color:isH?"rgba(255,255,255,0.45)":C.muted,marginBottom:3,letterSpacing:0.5}}>
-                      {attr.short}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                      <div style={{fontSize:9,fontWeight:700,color:isH?"rgba(255,255,255,0.45)":C.muted,letterSpacing:0.5}}>
+                        {attr.short}
+                      </div>
+                      {isDiff && <span style={{fontSize:9,fontWeight:800,color:isH?"rgba(255,255,255,0.7)":C.accent}}>比較ポイント</span>}
                     </div>
                     <div style={{fontSize:isMobile?13:14,fontWeight:700,color:isH?"#fff":C.ink,lineHeight:1.5}}>
                       {attr.levels[prof[attr.id]]}
                     </div>
                   </div>
-                ))}
+                )})}
                 <div style={{marginTop:4,fontSize:11,color:isH?"rgba(255,255,255,0.55)":C.muted,lineHeight:1.5}}>
                   ※ {rentBandText}
                 </div>
@@ -700,6 +720,37 @@ function QRModal({url, onClose}){
   );
 }
 
+
+function buildSearchSteps(impOrder, mustItems){
+  const top = impOrder[0]?.attr?.label || "重視条件";
+  const second = impOrder[1]?.attr?.label || null;
+  const steps = [];
+  steps.push(mustItems.length>0 ? `まずは必須条件（${mustItems.map(i=>i.label).join('・')}）を満たす物件に絞る` : 'まずはエリア・建物タイプ・予算帯で候補を絞る');
+  steps.push(`${top}を最優先に残し、候補を広めに拾う`);
+  if (second) steps.push(`${second}で比較して、迷う候補をふるい分ける`);
+  steps.push('最後に残った候補を内見して、全体バランスで決める');
+  return steps;
+}
+
+function buildHesitationPoints(impOrder){
+  if (!impOrder || impOrder.length < 2) return ['比較データが少ないため、追加比較で精度を上げられます'];
+  const [a,b,c] = impOrder;
+  const pts = [];
+  const gap1 = a.v - b.v;
+  const gap2 = b.v - (c?.v ?? 0);
+  if (gap1 < 8) {
+    pts.push(`${a.attr.label}と${b.attr.label}が拮抗しており、条件次第で判断が揺れやすいタイプです`);
+  } else {
+    pts.push(`${a.attr.label}が明確な軸ですが、${b.attr.label}との兼ね合いで最終判断が変わる可能性があります`);
+  }
+  if (c && gap2 < 6) {
+    pts.push(`3条件の差が小さめなので、内見時の印象や周辺環境で逆転しやすい傾向があります`);
+  } else if (c) {
+    pts.push(`${c.attr.label}は相対的に後順位なので、候補が絞れないときの調整弁として扱いやすいです`);
+  }
+  return pts;
+}
+
 function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onClearSaved,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
@@ -721,6 +772,8 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
     (prereqs.rentMin||prereqs.rentMax) ? `■ 賃料：${formatRentRange(prereqs)}` : null,
   ].filter(Boolean).join("\n");
 
+  const searchSteps = buildSearchSteps(impOrder, mustItems);
+  const hesitationPoints = buildHesitationPoints(impOrder);
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const shareUrl = buildShareUrl?.(savedPayload??{prereqs,btypes,byo,results});
@@ -735,7 +788,15 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
   };
 
   return(
-    <div style={{minHeight:"100vh",background:C.bg}}>
+    <>
+      <style>{`
+        @media print {
+          .print-hide { display: none !important; }
+          body { background: white !important; }
+          @page { margin: 10mm; }
+        }
+      `}</style>
+      <div style={{minHeight:"100vh",background:C.bg}}>
       {showQR&&shareUrl&&<QRModal url={shareUrl} onClose={()=>setShowQR(false)}/>}
       <Header/>
       <div style={{maxWidth:800,margin:"0 auto",padding:"56px 24px 80px"}}>
@@ -767,6 +828,32 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {rec.tags.map(tag=>(
               <span key={tag} style={{background:"rgba(255,255,255,0.12)",padding:"4px 12px",borderRadius:20,fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.75)"}}>{tag}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* おすすめの探し順 */}
+        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
+          <SLabel text="おすすめの探し順"/>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {searchSteps.map((step, idx)=>(
+              <div key={idx} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{minWidth:28,height:28,borderRadius:999,background:idx===0?C.accent:C.accentL,color:idx===0?"#fff":C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900}}>{idx+1}</div>
+                <div style={{fontSize:14,color:C.ink,lineHeight:1.7,paddingTop:2}}>{step}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 迷いやすいポイント */}
+        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
+          <SLabel text="迷いやすいポイント"/>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {hesitationPoints.map((point, idx)=>(
+              <div key={idx} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div style={{color:C.accent,fontWeight:900,marginTop:1}}>•</div>
+                <div style={{fontSize:14,color:C.ink,lineHeight:1.75}}>{point}</div>
+              </div>
             ))}
           </div>
         </div>
@@ -848,7 +935,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
         </div>
 
         {/* 営業メモ */}
-        <div style={{background:"#FFFBF0",border:`1.5px solid #E8D87A`,borderRadius:16,padding:28,marginBottom:28}}>
+        <div className="print-hide" style={{background:"#FFFBF0",border:`1.5px solid #E8D87A`,borderRadius:16,padding:28,marginBottom:28}}>
           <div style={{fontSize:11,fontWeight:700,color:"#7A6A00",letterSpacing:1.5,marginBottom:12}}>📋 担当者メモ（営業用）</div>
           <pre style={{fontSize:12,color:C.ink,lineHeight:1.9,margin:0,whiteSpace:"pre-wrap",fontFamily:"inherit"}}>{salesMemo}</pre>
           <button onClick={handleCopySales} style={{
@@ -862,8 +949,14 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           </button>
         </div>
 
+        {/* 診断の前提 */}
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.75,marginBottom:24,padding:"14px 16px",background:"rgba(255,255,255,0.55)",border:`1px solid ${C.line}`,borderRadius:12}}>
+          15回ではなく{TASKS.length}回の比較選択から、予算帯・エリア・建物タイプを揃えた前提で重視度を推定しています。
+          必須条件は別途確認しており、実際の物件案内ではこの条件を満たす候補の中で優先度順に探す想定です。
+        </div>
+
         {/* アクションボタン（2×3グリッド） */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div className="print-hide" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           {shareUrl&&(
             <button onClick={()=>setShowQR(true)} style={btnStyle(C.accent,"#fff",{padding:"14px 16px",gridColumn:"1 / -1"})}>
               📱 担当者にQRコードで共有する
@@ -889,7 +982,8 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
