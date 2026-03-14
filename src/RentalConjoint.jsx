@@ -23,13 +23,14 @@ const BYO_ITEMS = [
 ];
 
 const BYO_OPTIONS = [
-  { value:"must", label:"必須",       bg:"#2B5EA7", fg:"#fff" },
-  { value:"any",  label:"条件にしない", bg:"#4A7C59", fg:"#fff" },
+  { value:"must",    label:"譲れない",     bg:"#2B5EA7", fg:"#fff" },
+  { value:"prefer",  label:"できれば欲しい", bg:"#A56A2A", fg:"#fff" },
+  { value:"neutral", label:"こだわらない",  bg:"#4A7C59", fg:"#fff" },
 ];
 
-// ── デフォルトBYO（全項目「条件にしない」）──────
+// ── デフォルトBYO（全項目「こだわらない」）──────
 function defaultByo() {
-  return Object.fromEntries(BYO_ITEMS.map(i => [i.id, "any"]));
+  return Object.fromEntries(BYO_ITEMS.map(i => [i.id, "neutral"]));
 }
 
 // ── カラートークン ─────────────────────────────
@@ -45,6 +46,16 @@ const btnStyle = (bg, fg="#fff", ex={}) => ({
 
 // ── CBC問題数（15→9問）────────────────────────
 const CBC_TASK_COUNT = 9;
+
+const CONCERN_OPTIONS = [
+  "初期費用の総額",
+  "通勤・通学の実感",
+  "部屋の広さや家具配置",
+  "周辺環境（スーパー・治安・騒音など）",
+  "建物や水回りの状態",
+  "同居人・家族の納得",
+  "まだ何が気になるかはっきりしていない",
+];
 
 // ── タスク生成（支配ペア除去）─────────────────
 function buildTasks() {
@@ -281,6 +292,7 @@ export default function App(){
   const[taskIdx, setTaskIdx] =useState(0);
   const[resps,   setResps]   =useState([]);
   const[results, setResults] =useState(()=>hashPayload?.results||null);
+  const[concern, setConcern] =useState(()=>hashPayload?.concern||"");
 
   useEffect(() => {
     if (hashPayload) return;
@@ -295,7 +307,7 @@ export default function App(){
     const nr=[...resps,{profiles:TASKS[taskIdx].profiles,chosen:chosenIdx}];
     setResps(nr);
     if(taskIdx<TASKS.length-1)setTaskIdx(taskIdx+1);
-    else finalize(nr);
+    else setStage("concern");
   }
   function goBack(){
     setTaskIdx(prev => {
@@ -311,6 +323,7 @@ export default function App(){
       prereqs,
       btypes,
       byo,
+      concern,
       results: { pw, imp, rec: getRecommendation(pw, btypes) },
     };
     setResults(payload.results);
@@ -322,7 +335,7 @@ export default function App(){
     setStage("landing");
     setSaved(loadSaved());
     setPrereqs({rentMin:"",rentMax:"",area:""});
-    setBtypes([]);setByo(defaultByo());setTaskIdx(0);setResps([]);setResults(null);
+    setBtypes([]);setByo(defaultByo());setTaskIdx(0);setResps([]);setResults(null);setConcern("");
   }
 
   const openSaved = () => {
@@ -331,6 +344,7 @@ export default function App(){
     if (s.prereqs) setPrereqs(s.prereqs);
     if (s.btypes) setBtypes(s.btypes);
     if (s.byo) setByo(s.byo);
+    if (s.concern) setConcern(s.concern);
     if (s.results) setResults(s.results);
     setSaved(s);
     setStage("result");
@@ -342,6 +356,7 @@ export default function App(){
       if (payload.prereqs) setPrereqs(payload.prereqs);
       if (payload.btypes) setBtypes(payload.btypes);
       if (payload.byo) setByo(payload.byo);
+      if (payload.concern) setConcern(payload.concern);
       if (payload.results) setResults(payload.results);
       saveResult(payload);
       setSaved(payload);
@@ -359,8 +374,9 @@ export default function App(){
   );
   if(stage==="prereqs") return <PrereqsPage  prereqs={prereqs} setPrereqs={setPrereqs} btypes={btypes} setBtypes={setBtypes} onNext={()=>setStage("byo")}/>;
   if(stage==="byo")     return <BYOPage      byo={byo} setByo={setByo} btypes={btypes} onNext={()=>setStage("cbc")} onBack={()=>setStage("prereqs")}/>;
-  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} prereqs={prereqs} onChoice={handleChoice} onBack={goBack}/>;
-  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} savedPayload={saved} buildShareUrl={buildShareUrl} onClearSaved={()=>{ clearSaved(); setSaved(null); }} onRestart={restart}/>;
+  if(stage==="cbc")     return <CBCPage      task={TASKS[taskIdx]} taskIdx={taskIdx} progress={progress} prereqs={prereqs} onChoice={handleChoice} onBack={goBack} onComplete={()=>setStage("concern")}/>;
+  if(stage==="concern") return <ConcernPage  concern={concern} setConcern={setConcern} onBack={()=>setStage("cbc")} onNext={()=>finalize(resps)}/>;
+  if(stage==="result")  return <ResultPage   results={results} prereqs={prereqs} btypes={btypes} byo={byo} concern={concern} savedPayload={saved} buildShareUrl={buildShareUrl} onClearSaved={()=>{ clearSaved(); setSaved(null); }} onRestart={restart}/>;
   return null;
 }
 
@@ -397,7 +413,7 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
         </h1>
         <p style={{fontSize:15,color:C.muted,lineHeight:1.8,marginBottom:18}}>
           「駅近か、広さか」「新築か、コスパか」——住まい探しでは、全部は同時に満たせないことが多いです。
-          9回の比較選択に答えるだけで、言葉だけでは見えにくい重視度の傾向を数値化し、合いそうな物件タイプを提案します。
+          9回の比較選択に答えるだけで、言葉だけでは見えにくい重視度の傾向を数値化し、合いそうな物件タイプと探し方のヒントを提案します。
         </p>
         <p style={{fontSize:13,color:C.muted,lineHeight:1.75,marginBottom:44}}>
           前提として、比較では予算・エリア・建物タイプは揃っているものとして扱います。
@@ -407,7 +423,7 @@ function LandingPage({onStart, hasSaved, onOpenSaved, onImportSaved}){
             {n:"01",t:"基本条件の設定",     d:"エリア・建物タイプ・賃料の前提を入力"},
             {n:"02",t:"設備のこだわり確認",  d:"ペット可・駐車場など設備の希望を選択"},
             {n:"03",t:"9問の比較選択",      d:"3つの物件を比べてより好みのものを選ぶ"},
-            {n:"04",t:"優先度レポート",      d:"重視度スコアとぴったりな物件タイプを表示"},
+            {n:"04",t:"優先度レポート",      d:"重視度スコア、探し順、内見ポイントを表示"},
           ].map(item=>(
             <div key={item.n} style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:12,padding:"20px"}}>
               <div style={{fontFamily:"monospace",fontSize:10,color:C.accent,marginBottom:6,fontWeight:700}}>{item.n}</div>
@@ -456,7 +472,7 @@ function PrereqsPage({prereqs,setPrereqs,btypes,setBtypes,onNext}){
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:580,margin:"0 auto",padding:"60px 24px"}}>
-        <Step n="1" label="基本条件の設定" sub="診断の前提条件を入力してください。賃料は比較選択には使いません。"/>
+        <Step n="1" total="4" label="基本条件の設定" sub="診断の前提条件を入力してください。賃料は比較選択には使いません。"/>
 
         <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:16}}>
 
@@ -535,9 +551,9 @@ function BYOPage({byo,setByo,btypes,onNext,onBack}){
     <div style={{minHeight:"100vh",background:C.bg}}>
       <Header/>
       <div style={{maxWidth:600,margin:"0 auto",padding:"60px 24px"}}>
-        <Step n="2" label="設備のこだわり確認" sub="各設備について「必須 / 条件にしない」を選んでください。"/>
+        <Step n="2" total="4" label="設備のこだわり確認" sub="各設備について「譲れない / できれば欲しい / こだわらない」を選んでください。"/>
         <div style={{fontSize:12,color:C.muted,margin:"-18px 0 18px",lineHeight:1.6}}>
-          「必須」= この条件がない物件は除外する想定 ／「条件にしない」= あってもなくてもOK
+          「譲れない」= この条件がない物件は除外する想定 ／「できれば欲しい」= 候補比較で優先したい ／「こだわらない」= あってもなくてもOK
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:28}}>
           {activeItems.map(item=>(
@@ -580,7 +596,7 @@ function BYOPage({byo,setByo,btypes,onNext,onBack}){
 // ─────────────────────────────────────────────
 // CBC
 // ─────────────────────────────────────────────
-function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
+function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack,onComplete}){
   const[hov,setHov]=useState(null);
   const isMobile = useIsMobile();
   const rentBandText = useMemo(() => formatRentBand(prereqs), [prereqs]);
@@ -678,6 +694,41 @@ function CBCPage({task,taskIdx,progress,prereqs,onChoice,onBack}){
 }
 
 // ─────────────────────────────────────────────
+// CONCERN
+// ─────────────────────────────────────────────
+function ConcernPage({concern,setConcern,onBack,onNext}){
+  const valid = concern.trim().length > 0;
+  return(
+    <div style={{minHeight:"100vh",background:C.bg}}>
+      <Header/>
+      <div style={{maxWidth:620,margin:"0 auto",padding:"60px 24px"}}>
+        <Step n="4" total="4" label="最後に気になること" sub="このあと物件を決める前に、一番気になることを教えてください。追客や内見のご案内に使います。"/>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:28}}>
+          {CONCERN_OPTIONS.map(opt=>{
+            const active = concern === opt;
+            return(
+              <button key={opt} onClick={()=>setConcern(opt)} style={{
+                textAlign:"left",padding:"16px 18px",borderRadius:14,
+                border:`1.5px solid ${active?C.accent:C.line}`,
+                background:active?C.accentL:C.card,
+                color:active?C.accent:C.ink,
+                fontSize:14,fontWeight:700,cursor:"pointer"
+              }}>
+                {active?"✓ ":""}{opt}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",gap:12}}>
+          <button onClick={onBack} style={btnStyle("transparent",C.ink,{border:`1px solid ${C.line}`,flex:1})}>← 比較に戻る</button>
+          <button onClick={onNext} disabled={!valid} style={btnStyle(valid?C.ink:"#CCC","#fff",{flex:1,cursor:valid?"pointer":"not-allowed"})}>結果を見る →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // RESULT
 // ─────────────────────────────────────────────
 function QRModal({url, onClose}){
@@ -751,12 +802,37 @@ function buildHesitationPoints(impOrder){
   return pts;
 }
 
-function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onClearSaved,onRestart}){
+function buildViewingPoints(impOrder, mustItems, preferItems, concern){
+  const points = [];
+  const topIds = impOrder.slice(0,2).map(x=>x.id);
+  if (topIds.includes("area")) points.push("広さ重視なら、収納量・家具配置・生活動線を内見で必ず確認する");
+  if (topIds.includes("walk")) points.push("駅距離重視なら、実際の歩行時間・坂道・夜道の印象を確認する");
+  if (topIds.includes("age")) points.push("築年数を気にするなら、水回り・共用部・管理状態を重点的に見る");
+  if (mustItems.some(i=>i.id==="pet")) points.push("ペット可が譲れないなら、共用部ルールと散歩動線を確認する");
+  if (mustItems.some(i=>i.id==="parking")) points.push("駐車場が譲れないなら、空き状況・サイズ制限・出し入れしやすさを見る");
+  if (preferItems.some(i=>i.id==="autolock")) points.push("オートロックは優先度高めなので、防犯面とエントランス導線も確認する");
+
+  if (concern === "初期費用の総額") points.unshift("初期費用は内見前後で概算を出し、月額賃料と合わせて判断する");
+  if (concern === "通勤・通学の実感") points.unshift("通勤・通学は乗換えと駅からの実歩行を含めて確認する");
+  if (concern === "部屋の広さや家具配置") points.unshift("家具配置は寸法だけでなく、ドア開閉と通路幅まで確認する");
+  if (concern === "周辺環境（スーパー・治安・騒音など）") points.unshift("周辺環境は昼夜で印象が変わるため、できれば時間帯を変えて確認する");
+  if (concern === "建物や水回りの状態") points.unshift("水回りはにおい・換気・清掃状態まで見ておくと後悔しにくい");
+  if (concern === "同居人・家族の納得") points.unshift("同居人や家族と共有しやすいよう、気になる点を写真やメモで残す");
+
+  const deduped = [];
+  for (const point of points) {
+    if (!deduped.includes(point)) deduped.push(point);
+  }
+  return deduped.slice(0, 3);
+}
+
+function ResultPage({results,prereqs,btypes,byo,concern,savedPayload,buildShareUrl,onClearSaved,onRestart}){
   const{pw,imp,rec}=results;
   const impOrder=Object.entries(imp).sort(([,a],[,b])=>b-a).map(([id,v])=>({id,v,attr:ATTRS.find(a=>a.id===id)}));
   const activeItems = btypes.includes("mansion") ? BYO_ITEMS : BYO_ITEMS.filter(i => i.id !== "autolock");
   const mustItems=activeItems.filter(i=>byo[i.id]==="must");
-  const anyItems=activeItems.filter(i=>byo[i.id]==="any");
+  const preferItems=activeItems.filter(i=>byo[i.id]==="prefer");
+  const neutralItems=activeItems.filter(i=>byo[i.id]==="neutral");
   const selBtypes=BTYPE_OPTIONS.filter(o=>btypes.includes(o.id));
 
   // 営業向けサマリー生成
@@ -766,7 +842,8 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
   const salesMemo = [
     `■ 優先順位：${impOrder.map((item,i)=>`${i+1}位 ${item.attr.label}（${item.v.toFixed(0)}%）`).join(" → ")}`,
     `■ 最重視条件：${topAttr.attr.label}「${topLevelName}」`,
-    mustItems.length > 0 ? `■ 必須設備：${mustItems.map(i=>i.label).join("・")}` : "■ 必須設備：なし",
+    mustItems.length > 0 ? `■ 譲れない設備：${mustItems.map(i=>i.label).join("・")}` : "■ 譲れない設備：なし",
+    preferItems.length > 0 ? `■ できれば欲しい設備：${preferItems.map(i=>i.label).join("・")}` : null,
     `■ 推奨物件タイプ：${rec.name}`,
     prereqs.area ? `■ 希望エリア：${prereqs.area}` : null,
     (prereqs.rentMin||prereqs.rentMax) ? `■ 賃料：${formatRentRange(prereqs)}` : null,
@@ -774,9 +851,10 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
 
   const searchSteps = buildSearchSteps(impOrder, mustItems);
   const hesitationPoints = buildHesitationPoints(impOrder);
+  const viewingPoints = buildViewingPoints(impOrder, mustItems, preferItems, concern);
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(false);
-  const shareUrl = buildShareUrl?.(savedPayload??{prereqs,btypes,byo,results});
+  const shareUrl = buildShareUrl?.(savedPayload??{prereqs,btypes,byo,concern,results});
   const handleCopySales = async () => {
     try {
       await navigator.clipboard.writeText(salesMemo);
@@ -794,6 +872,26 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           .print-hide { display: none !important; }
           body { background: white !important; }
           @page { margin: 10mm; }
+          .print-checklist { gap: 14px !important; }
+          .print-check-item {
+            display: flex !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .print-check-item::before {
+            content: "□";
+            font-size: 18px;
+            line-height: 1;
+            color: #3F3A34;
+            margin-top: 1px;
+          }
+          .print-check-bullet { display: none !important; }
+          .print-check-text {
+            font-size: 14px !important;
+            line-height: 1.8 !important;
+          }
         }
       `}</style>
       <div style={{minHeight:"100vh",background:C.bg}}>
@@ -853,6 +951,28 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
               <div key={idx} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
                 <div style={{color:C.accent,fontWeight:900,marginTop:1}}>•</div>
                 <div style={{fontSize:14,color:C.ink,lineHeight:1.75}}>{point}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 決める前に気になること */}
+        {concern&&(
+          <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
+            <SLabel text="決める前に気になること"/>
+            <div style={{fontSize:16,fontWeight:800,color:C.ink,marginBottom:8}}>{concern}</div>
+            <div style={{fontSize:13,color:C.muted,lineHeight:1.7}}>この不安を先に解消できると、候補の比較と意思決定が進みやすくなります。</div>
+          </div>
+        )}
+
+        {/* 内見で特に確認したいポイント */}
+        <div style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:32,marginBottom:20}}>
+          <SLabel text="内見で特に確認したいポイント"/>
+          <div className="print-checklist" style={{display:"flex",flexDirection:"column",gap:10}}>
+            {viewingPoints.map((point, idx)=>(
+              <div key={idx} className="print-check-item" style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div className="print-check-bullet" style={{color:C.accent,fontWeight:900,marginTop:1}}>•</div>
+                <div className="print-check-text" style={{fontSize:14,color:C.ink,lineHeight:1.75}}>{point}</div>
               </div>
             ))}
           </div>
@@ -921,7 +1041,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           </div>
           {mustItems.length>0&&(
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.green,marginBottom:8}}>✓ 必須設備</div>
+              <div style={{fontSize:11,fontWeight:700,color:C.green,marginBottom:8}}>✓ 譲れない設備</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {mustItems.map(i=>(
                   <span key={i.id} style={{background:"#F0FAF3",border:`1px solid ${C.green}`,color:C.green,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:700}}>{i.label}</span>
@@ -929,8 +1049,18 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
               </div>
             </div>
           )}
-          {anyItems.length>0&&(
-            <div style={{marginTop:10,fontSize:12,color:C.muted}}>条件にしない設備：{anyItems.map(i=>i.label).join("・")}</div>
+                    {preferItems.length>0&&(
+            <div style={{marginTop:14,marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#A56A2A",marginBottom:8}}>＋ できれば欲しい設備</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {preferItems.map(i=>(
+                  <span key={i.id} style={{background:"#FFF7ED",border:`1px solid #D6A15F`,color:"#A56A2A",padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:700}}>{i.label}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {neutralItems.length>0&&(
+            <div style={{marginTop:10,fontSize:12,color:C.muted}}>こだわらない設備：{neutralItems.map(i=>i.label).join("・")}</div>
           )}
         </div>
 
@@ -968,7 +1098,7 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
           </button>
           <button onClick={async()=>{
             try{
-              const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,results},null,2);
+              const txt=JSON.stringify(savedPayload??{prereqs,btypes,byo,concern,results},null,2);
               await navigator.clipboard.writeText(txt);
               alert("他の端末での表示用データをコピーしました");
             }catch{alert("コピーに失敗しました（ブラウザ設定をご確認ください）");}
@@ -1025,10 +1155,10 @@ function ImportBox({onImport}){
 // ─────────────────────────────────────────────
 // TINY HELPERS
 // ─────────────────────────────────────────────
-function Step({n,label,sub}){
+function Step({n,label,sub,total="3"}){
   return(
     <div style={{marginBottom:36}}>
-      <div style={{fontFamily:"monospace",fontSize:10,color:C.accent,fontWeight:700,marginBottom:10,letterSpacing:1}}>STEP {n} / 3</div>
+      <div style={{fontFamily:"monospace",fontSize:10,color:C.accent,fontWeight:700,marginBottom:10,letterSpacing:1}}>STEP {n} / {total}</div>
       <h2 style={{fontSize:26,fontWeight:900,color:C.ink,marginBottom:6,letterSpacing:"-0.5px"}}>{label}</h2>
       <p style={{fontSize:13,color:C.muted}}>{sub}</p>
     </div>
