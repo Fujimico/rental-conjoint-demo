@@ -951,8 +951,9 @@ function ResultPage({results,prereqs,btypes,byo,savedPayload,buildShareUrl,onCle
 
         {/* 診断の前提 */}
         <div style={{fontSize:12,color:C.muted,lineHeight:1.75,marginBottom:24,padding:"14px 16px",background:"rgba(255,255,255,0.55)",border:`1px solid ${C.line}`,borderRadius:12}}>
-          15回ではなく{TASKS.length}回の比較選択から、予算帯・エリア・建物タイプを揃えた前提で重視度を推定しています。
-          必須条件は別途確認しており、実際の物件案内ではこの条件を満たす候補の中で優先度順に探す想定です。
+                    比較選択の結果をもとに、予算帯・エリア・建物タイプを揃えた前提で重視度を推定しています。
+          必須条件は別途確認しており、実際の物件案内では、その条件を満たす候補の中から優先度順に探す想定です。
+
         </div>
 
         {/* アクションボタン（2×3グリッド） */}
